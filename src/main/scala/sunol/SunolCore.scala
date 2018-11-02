@@ -10,5 +10,6 @@ class SunolCore extends Module {
   })
 
   val pc = RegInit(0.U(32.W))
+
 }
 

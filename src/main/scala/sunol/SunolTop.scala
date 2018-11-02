@@ -1,6 +1,7 @@
 package sunol
 
 import chisel3._
+import chisel3.util.Cat
 
 
 class SunolTop extends Module {
@@ -22,7 +23,8 @@ class SunolTop extends Module {
 
   io.dcache_addr := dmem.addr
   io.icache_addr := imem.addr
-  io.dcache_we := dmem.we //TODO: fix this - should be
+  val sizemask = Mux(dmem.size === 0.U, 1.U(4.W), Mux(dmem.size === 1.U, 3.U(4.W), 7.U(4.W)))
+  io.dcache_we := Cat(Seq.fill(4)(dmem.we)) & dmem.size //TODO: fix this - should be
   io.dcache_re := true.B
   io.icache_re := true.B
   io.dcache_din := dmem.wdata
