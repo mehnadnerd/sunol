@@ -121,7 +121,7 @@ class SunolCore extends Module {
       ex_rs1 := rf(rs1_num)
       ex_rs2 := rf(rs2_num)
 
-      ex_alu_add_arith := de_inst.full(30)
+      ex_alu_add_arith := Mux(opcode === OPCODE_OP_IMM.U && de_inst.full(14, 12) === 0.U, false.B, de_inst.full(30)) //complicated b/c addi
       ex_alu_funct := de_inst.full(14, 12)
 
       ex_mem_width := de_inst.full(14, 12)
