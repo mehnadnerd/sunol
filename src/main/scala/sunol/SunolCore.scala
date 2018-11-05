@@ -66,7 +66,7 @@ class SunolCore extends Module {
 
   //mem
   val me_ready = Wire(Bool())
-  val me_aluout = Reg(UInt(32.W)) // alu output
+  val me_alu_out = Reg(UInt(32.W)) // alu output
   val me_width = Reg(UInt(3.W)) // width
   //val me_addr = Reg(UInt(32.W)) // addr for mem //TODO: might be same as aluout
   val me_wdata = Reg(UInt(32.W)) // data to be written -- always rs2?
@@ -143,11 +143,11 @@ class SunolCore extends Module {
 
       //imm decode
       {
-        val imm_i = Cat(Fill(20, de_inst.full(31)), de_inst.full(30, 20))
-        val imm_s = Cat(Fill(20, de_inst.full(31)), de_inst.full(30, 25), de_inst.full(11, 8), de_inst.full(7))
-        val imm_b = Cat(Fill(19, de_inst.full(31)), de_inst.full(7), de_inst.full(30, 25), de_inst.full(11, 8), 0.U(1.W))
+        val imm_i = Cat(Fill(21, de_inst.full(31)), de_inst.full(30, 20))
+        val imm_s = Cat(Fill(21, de_inst.full(31)), de_inst.full(30, 25), de_inst.full(11, 8), de_inst.full(7))
+        val imm_b = Cat(Fill(20, de_inst.full(31)), de_inst.full(7), de_inst.full(30, 25), de_inst.full(11, 8), 0.U(1.W))
         val imm_u = Cat(de_inst.full(31, 12), Fill(12, 0.U(1.W)))
-        val imm_j = Cat(Fill(11, de_inst.full(31)), de_inst.full(19, 12), de_inst.full(20), de_inst.full(30, 21), 0.U(1.W))
+        val imm_j = Cat(Fill(12, de_inst.full(31)), de_inst.full(19, 12), de_inst.full(20), de_inst.full(30, 21), 0.U(1.W))
 
         switch(opcode) {
           is(OPCODE_OP_IMM.U) {
@@ -249,86 +249,88 @@ class SunolCore extends Module {
   }
 
   //execute
-  {
-    ex_ready := !ex_valid || me_ready
-    when(ex_valid && me_ready) { //TODO: added me_ready to this so don't lose link when jumping
-      //branching
-      {
-        val branch_invert = ex_b_ctrl(0)
-        val branch_signed = ex_b_ctrl(1)
-        val branch_lt_eq = ex_b_ctrl(2)
+  ex_ready := !ex_valid || me_ready
 
-        val preinvert = Mux(branch_lt_eq, Mux(branch_signed, ex_rs1.asSInt() < ex_rs2.asSInt(), ex_rs1 < ex_rs2), ex_rs1 === ex_rs2)
-        val inverted = preinvert ^ branch_invert
-        branch_taken := (inverted && ex_b_use) || ex_j
-      }
-      val alu_out = Wire(UInt(32.W))
-      //alu
-      val op1 = Mux(ex_op1source === source1_rs1, ex_rs1, ex_pc)
-      val op2 = Mux(ex_op2source === source2_rs2, ex_rs2, ex_imm)
-      alu_out := DontCare
-      switch(ex_alu_funct) {
-        is(0.U) {
-          alu_out := Mux(ex_alu_add_arith, (op1.asSInt() - op2.asSInt()).asUInt(), op1 + op2)
-        }
-        is(1.U) {
-          alu_out := op1 << op2(4, 0)
-        }
-        is(2.U) {
-          alu_out := op1.asSInt() < op2.asSInt()
-        }
-        is(3.U) {
-          alu_out := op1 < op2
-        }
-        is(4.U) {
-          alu_out := op1 ^ op2
-        }
-        is(5.U) {
-          alu_out := Mux(ex_alu_add_arith, (op1.asSInt() >> op2(4, 0)).asUInt(), op1 >> op2(4, 0))
-        }
-        is(6.U) {
-          alu_out := op1 | op2
-        }
-        is(7.U) {
-          alu_out := op1 & op2
-        }
-      }
-      branch_addr := alu_out
-      when(me_ready) {
-        me_aluout := alu_out
-      }
-
-      when(me_ready) {
-        me_width := ex_mem_width
-        me_re := ex_mem_re
-        me_we := ex_mem_we
-        me_pc4 := ex_pc + 4.U
-        me_wdata := ex_rs2
-        me_rd_num := ex_rd_num
-        me_wb_en := ex_wb_en
-        me_valid := true.B
-      }
-
-      when(me_ready && de_valid) {
-        //bypassing code
-        when(de_inst.full(19, 15) === ex_rd_num && ex_wb_src === wbs_alu && ex_wb_en && ex_rd_num =/= 0.U) {
-          //rs1 bypass
-          ex_rs1 := alu_out
-        }
-        when(de_inst.full(24, 20) === ex_rd_num && ex_wb_src === wbs_alu && ex_wb_en && ex_rd_num =/= 0.U) {
-          //rs1 bypass
-          ex_rs2 := alu_out
-        }
-      }
-    }.otherwise {
-      when(me_we || (io.dmem.resp && me_re)) { // after doing thing with side effects, stop doing it again?? TODO: is this better
-        me_valid := false.B
-      }
-      //me_valid := false.B // TODO: can this result in invaliding something in the mem stage that shouldn't be? hopefully not
-      branch_taken := false.B
-      branch_addr := 0.U
+  val alu_out = Wire(UInt(32.W))
+  //alu
+  val op1 = Mux(ex_op1source === source1_rs1, ex_rs1, ex_pc)
+  val op2 = Mux(ex_op2source === source2_rs2, ex_rs2, ex_imm)
+  alu_out := DontCare
+  switch(ex_alu_funct) {
+    is(0.U) {
+      alu_out := Mux(ex_alu_add_arith, (op1.asSInt() - op2.asSInt()).asUInt(), op1 + op2)
+    }
+    is(1.U) {
+      alu_out := op1 << op2(4, 0)
+    }
+    is(2.U) {
+      alu_out := op1.asSInt() < op2.asSInt()
+    }
+    is(3.U) {
+      alu_out := op1 < op2
+    }
+    is(4.U) {
+      alu_out := op1 ^ op2
+    }
+    is(5.U) {
+      alu_out := Mux(ex_alu_add_arith, (op1.asSInt() >> op2(4, 0)).asUInt(), op1 >> op2(4, 0))
+    }
+    is(6.U) {
+      alu_out := op1 | op2
+    }
+    is(7.U) {
+      alu_out := op1 & op2
     }
   }
+
+  when(ex_valid && me_ready) { //TODO: added me_ready to this so don't lose link when jumping
+    //branching
+    {
+      val branch_invert = ex_b_ctrl(0)
+      val branch_signed = ex_b_ctrl(1)
+      val branch_lt_eq = ex_b_ctrl(2)
+
+      val preinvert = Mux(branch_lt_eq, Mux(branch_signed, ex_rs1.asSInt() < ex_rs2.asSInt(), ex_rs1 < ex_rs2), ex_rs1 === ex_rs2)
+      val inverted = preinvert ^ branch_invert
+      branch_taken := (inverted && ex_b_use) || ex_j
+    }
+
+    branch_addr := alu_out
+    when(me_ready) {
+      me_alu_out := alu_out
+    }
+
+    when(me_ready) {
+      me_width := ex_mem_width
+      me_re := ex_mem_re
+      me_we := ex_mem_we
+      me_pc4 := ex_pc + 4.U
+      me_wdata := ex_rs2
+      me_rd_num := ex_rd_num
+      me_wb_en := ex_wb_en
+      me_valid := true.B
+    }
+
+    when(me_ready && de_valid) {
+      //bypassing code
+      when(de_inst.full(19, 15) === ex_rd_num && ex_wb_src === wbs_alu && ex_wb_en && ex_rd_num =/= 0.U) {
+        //rs1 bypass
+        ex_rs1 := alu_out
+      }
+      when(de_inst.full(24, 20) === ex_rd_num && ex_wb_src === wbs_alu && ex_wb_en && ex_rd_num =/= 0.U) {
+        //rs1 bypass
+        ex_rs2 := alu_out
+      }
+    }
+  }.otherwise {
+    when(me_we || (io.dmem.resp && me_re)) { // after doing thing with side effects, stop doing it again?? TODO: is this better
+      me_valid := false.B
+    }
+    //me_valid := false.B // TODO: can this result in invaliding something in the mem stage that shouldn't be? hopefully not
+    branch_taken := false.B
+    branch_addr := 0.U
+  }
+
 
   //mem
   {
@@ -336,7 +338,7 @@ class SunolCore extends Module {
     me_ready := !me_valid || (mem.resp || !me_re)
     mem.re := me_re && (me_valid && wb_ready)
     mem.size := me_width
-    mem.addr := me_aluout
+    mem.addr := me_alu_out
     mem.wdata := me_wdata
     mem.we := me_we && (me_valid && wb_ready)
     when(me_valid && wb_ready) {
@@ -345,7 +347,7 @@ class SunolCore extends Module {
 
       wb_valid := (mem.resp || !me_re) //assumming writes always take 1 cycle, if not change to !(me_re || me_we)
 
-      wb_alu := me_aluout
+      wb_alu := me_alu_out
       wb_src := me_wb_src
       wb_pc4 := me_pc4
       wb_rd_num := me_rd_num
@@ -366,6 +368,44 @@ class SunolCore extends Module {
         }.otherwise {
           regfile(wb_rd_num) := wb_val
         }
+      }
+    }
+  }
+
+  //bypassing stuff -- out here b/c reverse ordering
+
+  when(me_ready && de_valid) { // can only do this bypassing when decoding
+    when(wb_valid) { //from wb
+      //bypassing code
+      when(de_inst.full(19, 15) === wb_rd_num && wb_en && wb_rd_num =/= 0.U) {
+        //rs1 bypass
+        ex_rs1 := Mux(wb_src === wbs_alu, wb_alu, Mux(wb_src === wbs_mem, wb_mem, wb_pc4))
+      }
+      when(de_inst.full(24, 20) === wb_rd_num && wb_en && wb_rd_num =/= 0.U) {
+        //rs1 bypass
+        ex_rs2 := Mux(wb_src === wbs_alu, wb_alu, Mux(wb_src === wbs_mem, wb_mem, wb_pc4))
+      }
+    }
+    when(me_valid) { //from mem
+      //bypassing code
+      when(de_inst.full(19, 15) === me_rd_num && me_wb_src === wbs_alu && me_wb_en && me_rd_num =/= 0.U) {
+        //rs1 bypass
+        ex_rs1 := me_alu_out
+      }
+      when(de_inst.full(24, 20) === me_rd_num && me_wb_src === wbs_alu && me_wb_en && me_rd_num =/= 0.U) {
+        //rs1 bypass
+        ex_rs2 := me_alu_out
+      }
+    }
+    when(me_ready && de_valid) { //from ex
+      //bypassing code
+      when(de_inst.full(19, 15) === ex_rd_num && ex_wb_src === wbs_alu && ex_wb_en && ex_rd_num =/= 0.U) {
+        //rs1 bypass
+        ex_rs1 := alu_out
+      }
+      when(de_inst.full(24, 20) === ex_rd_num && ex_wb_src === wbs_alu && ex_wb_en && ex_rd_num =/= 0.U) {
+        //rs1 bypass
+        ex_rs2 := alu_out
       }
     }
   }
