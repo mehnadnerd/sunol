@@ -262,44 +262,42 @@ class SunolCore extends Module {
         val inverted = preinvert ^ branch_invert
         branch_taken := (inverted && ex_b_use) || ex_j
       }
-
+      val alu_out = Wire(UInt(32.W))
       //alu
-      {
-        val op1 = Mux(ex_op1source === source1_rs1, ex_rs1, ex_pc)
-        val op2 = Mux(ex_op2source === source2_rs2, ex_rs2, ex_imm)
-        val alu_out = Wire(UInt(32.W))
-        alu_out := DontCare
-        switch(ex_alu_funct) {
-          is(0.U) {
-            alu_out := Mux(ex_alu_add_arith, (op1.asSInt() - op2.asSInt()).asUInt(), op1 + op2)
-          }
-          is(1.U) {
-            alu_out := op1 << op2(4, 0)
-          }
-          is(2.U) {
-            alu_out := op1.asSInt() < op2.asSInt()
-          }
-          is(3.U) {
-            alu_out := op1 < op2
-          }
-          is(4.U) {
-            alu_out := op1 ^ op2
-          }
-          is(5.U) {
-            alu_out := Mux(ex_alu_add_arith, (op1.asSInt() >> op2(4, 0)).asUInt(), op1 >> op2(4, 0))
-          }
-          is(6.U) {
-            alu_out := op1 | op2
-          }
-          is(7.U) {
-            alu_out := op1 & op2
-          }
+      val op1 = Mux(ex_op1source === source1_rs1, ex_rs1, ex_pc)
+      val op2 = Mux(ex_op2source === source2_rs2, ex_rs2, ex_imm)
+      alu_out := DontCare
+      switch(ex_alu_funct) {
+        is(0.U) {
+          alu_out := Mux(ex_alu_add_arith, (op1.asSInt() - op2.asSInt()).asUInt(), op1 + op2)
         }
-        branch_addr := alu_out
-        when(me_ready) {
-          me_aluout := alu_out
+        is(1.U) {
+          alu_out := op1 << op2(4, 0)
+        }
+        is(2.U) {
+          alu_out := op1.asSInt() < op2.asSInt()
+        }
+        is(3.U) {
+          alu_out := op1 < op2
+        }
+        is(4.U) {
+          alu_out := op1 ^ op2
+        }
+        is(5.U) {
+          alu_out := Mux(ex_alu_add_arith, (op1.asSInt() >> op2(4, 0)).asUInt(), op1 >> op2(4, 0))
+        }
+        is(6.U) {
+          alu_out := op1 | op2
+        }
+        is(7.U) {
+          alu_out := op1 & op2
         }
       }
+      branch_addr := alu_out
+      when(me_ready) {
+        me_aluout := alu_out
+      }
+
       when(me_ready) {
         me_width := ex_mem_width
         me_re := ex_mem_re
@@ -309,6 +307,18 @@ class SunolCore extends Module {
         me_rd_num := ex_rd_num
         me_wb_en := ex_wb_en
         me_valid := true.B
+      }
+
+      when(me_ready && de_valid) {
+        //bypassing code
+        when(de_inst.full(19, 15) === ex_rd_num && ex_wb_src === wbs_alu && ex_wb_en && ex_rd_num =/= 0.U) {
+          //rs1 bypass
+          ex_rs1 := alu_out
+        }
+        when(de_inst.full(24, 20) === ex_rd_num && ex_wb_src === wbs_alu && ex_wb_en && ex_rd_num =/= 0.U) {
+          //rs1 bypass
+          ex_rs2 := alu_out
+        }
       }
     }.otherwise {
       when(me_we || (io.dmem.resp && me_re)) { // after doing thing with side effects, stop doing it again?? TODO: is this better
