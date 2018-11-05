@@ -19,6 +19,7 @@ class SunolCore extends Module {
   val csr = RegInit(0.U(32.W))
 
   val branch_taken = Wire(Bool()) // TODO: do this better
+  val branch_addr = Wire(UInt(32.W))
 
   // register declarations
 
@@ -26,11 +27,13 @@ class SunolCore extends Module {
   //val if_pc = Reg(UInt(32.W)) // pc to fetch instruction at //TODO: should this just be pc?
   val if_pc_valid = Reg(Bool()) // whether this pc is valid and instruction
   //decode
+  val de_ready = Wire(Bool())
   val de_inst = Reg(RVInstruction()) // instruction to be decoded
   val de_valid = Reg(Bool()) // whether instruction is valid
   val de_pc = Reg(UInt(32.W))
 
   //execute
+  val ex_ready = Wire(Bool())
   val ex_rs1 = Reg(UInt(32.W)) // rs1
   val source1_rs1 :: source1_pc :: Nil = Enum(2)
   val ex_op1source = Reg(UInt(1.W)) // whether op1 comes from rs1 or something else
@@ -47,7 +50,7 @@ class SunolCore extends Module {
 
   val ex_b_ctrl = Reg(UInt(3.W))
   val ex_b_use = Reg(Bool()) // whether or not should evaluate branch condition
-  //TODO: Where put output for branching
+  val ex_j = Reg(Bool())
 
   //passthrough things
   val ex_mem_width = Reg(UInt(3.W)) // memwidth, passthroiugh
@@ -61,6 +64,7 @@ class SunolCore extends Module {
   val ex_pc = Reg(UInt(32.W))
 
   //mem
+  val me_ready = Wire(Bool())
   val me_aluout = Reg(UInt(32.W)) // alu output
   val me_width = Reg(UInt(3.W)) // width
   //val me_addr = Reg(UInt(32.W)) // addr for mem //TODO: might be same as aluout
@@ -75,6 +79,7 @@ class SunolCore extends Module {
   val me_wb_en = Reg(Bool())
 
   //writeback
+  val wb_ready = Wire(Bool())
   val wb_rd_num = Reg(UInt(5.W)) // reg to writeback to
   val wb_alu = Reg(UInt(32.W))
   val wb_pc4 = Reg(UInt(32.W))
@@ -84,22 +89,24 @@ class SunolCore extends Module {
 
   val wb_src = Reg(UInt(2.W))
 
-
-  //updates
+  //updates - datapath
   //instruction fetch
   {
     io.imem.addr := pc
     io.imem.re := if_pc_valid
-    when(if_pc_valid) {
+    when(if_pc_valid && de_ready) {
       de_inst := io.imem.data
       de_valid := io.imem.resp
     }.otherwise {
-      de_valid := false.B
+      when(ex_ready) { //decode is done whenever ex accepts it
+        de_valid := false.B
+      }
     }
   }
   //decode
   {
-    when(de_valid) {
+    de_ready := ex_ready || !de_valid
+    when(de_valid && ex_ready) {
       val opcode = de_inst.full(6, 0)
 
       val rs1_num = de_inst.full(19, 15)
@@ -117,6 +124,8 @@ class SunolCore extends Module {
 
       ex_mem_width := de_inst.full(14, 12)
 
+      ex_b_ctrl := de_inst.full(14, 12)
+
       //defaults
       ex_imm := DontCare
       ex_op1source := DontCare
@@ -125,6 +134,8 @@ class SunolCore extends Module {
       ex_mem_we := false.B
       ex_wb_src := DontCare
       ex_wb_en := false.B
+      ex_b_use := false.B
+      ex_j := false.B
 
       //imm decode
       {
@@ -179,7 +190,7 @@ class SunolCore extends Module {
           }
           is(OPCODE_BRANCH.U) {
             ex_imm := imm_b
-            //TODO: Figure this out
+            ex_b_use := true.B
           }
           is(OPCODE_JAL.U) {
             ex_imm := imm_j
@@ -188,6 +199,7 @@ class SunolCore extends Module {
             ex_alu_funct := 0.U // add
             ex_alu_add_arith := 0.U //also add
             ex_wb_en := true.B
+            ex_j := true.B
           }
           is(OPCODE_JALR.U) {
             ex_imm := imm_i
@@ -196,6 +208,7 @@ class SunolCore extends Module {
             ex_alu_funct := 0.U // add
             ex_alu_add_arith := 0.U //also add
             ex_wb_en := true.B
+            ex_j := true.B
           }
           is(OPCODE_SYSTEM.U) {
             ex_imm := DontCare
@@ -215,13 +228,16 @@ class SunolCore extends Module {
       }
       ex_valid := true.B
     }.otherwise {
-      ex_valid := false.B
+      when(me_ready) { // this is when ex will be done
+        ex_valid := false.B // make sure not invalidate when shouldn't
+      }
+
     }
   }
 
   //execute
   {
-    when(ex_valid) {
+    when(ex_valid && me_ready) { //TODO: added me_ready to this so don't lose link when jumping
       //branching
       {
         val branch_invert = ex_b_ctrl(0)
@@ -230,7 +246,7 @@ class SunolCore extends Module {
 
         val preinvert = Mux(branch_lt_eq, Mux(branch_signed, ex_rs1.asSInt() < ex_rs2.asSInt(), ex_rs1 < ex_rs2), ex_rs1 === ex_rs2)
         val inverted = !preinvert
-        branch_taken := inverted && ex_b_use
+        branch_taken := (inverted && ex_b_use) || ex_j
       }
 
       //alu
@@ -265,27 +281,36 @@ class SunolCore extends Module {
             alu_out := op1 & op2
           }
         }
-        me_aluout := alu_out
+        branch_addr := alu_out
+        when(me_ready) {
+          me_aluout := alu_out
+        }
       }
-
-      me_width := ex_mem_width
-      me_re := ex_mem_re
-      me_we := ex_mem_we
-      me_pc4 := ex_pc + 4.U
-      me_wdata := ex_rs2
-      me_rd_num := ex_rd_num
-      me_wb_en := ex_wb_en
-      me_valid := true.B
+      when(me_ready) {
+        me_width := ex_mem_width
+        me_re := ex_mem_re
+        me_we := ex_mem_we
+        me_pc4 := ex_pc + 4.U
+        me_wdata := ex_rs2
+        me_rd_num := ex_rd_num
+        me_wb_en := ex_wb_en
+        me_valid := true.B
+      }
     }.otherwise {
-      me_valid := false.B
+      when(me_we || (io.dmem.resp && me_re)) { // after doing thing with side effects, stop doing it again?? TODO: is this better
+        me_valid := false.B
+      }
+      //me_valid := false.B // TODO: can this result in invaliding something in the mem stage that shouldn't be? hopefully not
       branch_taken := false.B
+      branch_addr := 0.U
     }
   }
 
   //mem
   {
     val mem = io.dmem
-    when(me_valid) {
+    me_ready := !me_valid || (mem.resp || !me_re)
+    when(me_valid && wb_ready) {
       mem.re := me_re
       mem.size := me_width
       mem.addr := me_aluout
@@ -300,23 +325,41 @@ class SunolCore extends Module {
       wb_pc4 := me_pc4
       wb_rd_num := me_rd_num
       wb_en := me_wb_en
-    } .otherwise {
+    }.otherwise {
       wb_valid := false.B
     }
   }
 
   //writeback
   {
+    wb_ready := true.B // always ready for writeback
     when(wb_valid) {
       when(wb_en) {
         val wb_val = Mux(wb_src === wbs_alu, wb_alu, Mux(wb_src === wbs_mem, wb_mem, wb_pc4))
         when(wb_rd_num === 0.U) {
           //nothing
-        } .otherwise {
+        }.otherwise {
           regfile(wb_rd_num) := wb_val
         }
       }
     }
+  }
+
+  //control stuff
+  {
+    //things to do:
+    //normal pc+4
+    //from alu - this covers branch target addresses and jal/jalr
+    when(if_pc_valid && de_ready && io.imem.resp) { // if sending
+      pc := pc + 4.U
+    }
+    when(branch_taken) { // branch or jump
+      pc := branch_addr
+      //need to kill bad instructions
+      de_valid := false.B
+      ex_valid := false.B
+    }
+    if_pc_valid := true.B
   }
 }
 
