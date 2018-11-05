@@ -4,7 +4,6 @@ import chisel3._
 
 class RVInstruction extends Bundle {
   val full = UInt(32.W)
-  val opcode = full(6, 0)
 }
 
 object RVInstruction {
@@ -25,6 +24,7 @@ object Util {
       u.asTypeOf(UInt(32.W))
     }
   }
+
 }
 
 object Constants {

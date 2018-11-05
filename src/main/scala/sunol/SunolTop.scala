@@ -17,7 +17,7 @@ class SunolTop extends Module {
     val stall = Input(Bool())
     val csr = Output(UInt(32.W))
   })
-  val core = new SunolCore()
+  val core = Module(new SunolCore())
   val dmem = core.io.dmem
   val imem = core.io.imem
 

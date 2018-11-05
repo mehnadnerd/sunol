@@ -6,17 +6,18 @@ import sunol.Util._
 import sunol.Constants._
 
 class SunolCore extends Module {
-  override def io = IO(new Bundle {
+  val io = IO(new Bundle {
     val imem = Flipped(new SunolIMemIO())
     val dmem = Flipped(new SunolDMemIO())
     val tohost = Output(UInt(32.W))
   })
 
-  val pc = RegInit(0.U(32.W))
-  val regfile = RegInit(Vec(32, UInt(32.W))) // TODO: handle x0
+  val pc = RegInit(0x2000.U(32.W))
+  val regfile = Reg(Vec(32, UInt(32.W))) // TODO: handle x0
   def rf(num: UInt): UInt = Mux(num === 0.U, 0.U, regfile(num))
 
   val csr = RegInit(0.U(32.W))
+  io.tohost := csr
 
   val branch_taken = Wire(Bool()) // TODO: do this better
   val branch_addr = Wire(UInt(32.W))
@@ -29,7 +30,7 @@ class SunolCore extends Module {
   //decode
   val de_ready = Wire(Bool())
   val de_inst = Reg(RVInstruction()) // instruction to be decoded
-  val de_valid = Reg(Bool()) // whether instruction is valid
+  val de_valid = RegInit(false.B) // whether instruction is valid
   val de_pc = Reg(UInt(32.W))
 
   //execute
@@ -46,7 +47,7 @@ class SunolCore extends Module {
   val ex_rs2_num = Reg(UInt(5.W)) // for bypassing
   val ex_alu_funct = Reg(UInt(3.W)) // alu funct
   val ex_alu_add_arith = Reg(Bool()) // alu add/sub arithmetic/logical
-  val ex_valid = Reg(Bool()) // whether the things to execute are valid
+  val ex_valid = RegInit(false.B) // whether the things to execute are valid
 
   val ex_b_ctrl = Reg(UInt(3.W))
   val ex_b_use = Reg(Bool()) // whether or not should evaluate branch condition
@@ -71,7 +72,7 @@ class SunolCore extends Module {
   val me_wdata = Reg(UInt(32.W)) // data to be written -- always rs2?
   val me_re = Reg(Bool()) // read enable
   val me_we = Reg(Bool()) // write enable
-  val me_valid = Reg(Bool()) //mem things are valid
+  val me_valid = RegInit(false.B) //mem things are valid
 
   val me_wb_src = Reg(UInt(2.W))
   val me_pc4 = Reg(UInt(32.W))
@@ -85,7 +86,7 @@ class SunolCore extends Module {
   val wb_pc4 = Reg(UInt(32.W))
   val wb_mem = Reg(UInt(32.W))
   val wb_en = Reg(Bool()) //
-  val wb_valid = Reg(Bool())
+  val wb_valid = RegInit(false.B)
 
   val wb_src = Reg(UInt(2.W))
 
@@ -95,8 +96,9 @@ class SunolCore extends Module {
     io.imem.addr := pc
     io.imem.re := if_pc_valid
     when(if_pc_valid && de_ready) {
-      de_inst := io.imem.data
+      de_inst := io.imem.data.asTypeOf(RVInstruction())
       de_valid := io.imem.resp
+      de_pc := RegNext(pc)
     }.otherwise {
       when(ex_ready) { //decode is done whenever ex accepts it
         de_valid := false.B
@@ -125,6 +127,8 @@ class SunolCore extends Module {
       ex_mem_width := de_inst.full(14, 12)
 
       ex_b_ctrl := de_inst.full(14, 12)
+
+      ex_pc := de_pc
 
       //defaults
       ex_imm := DontCare
@@ -191,6 +195,10 @@ class SunolCore extends Module {
           is(OPCODE_BRANCH.U) {
             ex_imm := imm_b
             ex_b_use := true.B
+            ex_op1source := source1_pc
+            ex_op2source := source2_imm
+            ex_alu_funct := 0.U // add
+            ex_alu_add_arith := 0.U //also addd
           }
           is(OPCODE_JAL.U) {
             ex_imm := imm_j
@@ -210,7 +218,12 @@ class SunolCore extends Module {
             ex_wb_en := true.B
             ex_j := true.B
           }
-          is(OPCODE_SYSTEM.U) {
+          is(OPCODE_SYSTEM.U) { // only system supporting is cssrw/i
+            when(de_inst.full(14) === 1.U) {
+              csr := de_inst.full(19, 15)
+            }.otherwise {
+              csr := rf(de_inst.full(19, 15))
+            }
             ex_imm := DontCare
             ex_op1source := DontCare
             ex_op2source := DontCare
@@ -237,6 +250,7 @@ class SunolCore extends Module {
 
   //execute
   {
+    ex_ready := !ex_valid || me_ready
     when(ex_valid && me_ready) { //TODO: added me_ready to this so don't lose link when jumping
       //branching
       {
@@ -245,7 +259,7 @@ class SunolCore extends Module {
         val branch_lt_eq = ex_b_ctrl(2)
 
         val preinvert = Mux(branch_lt_eq, Mux(branch_signed, ex_rs1.asSInt() < ex_rs2.asSInt(), ex_rs1 < ex_rs2), ex_rs1 === ex_rs2)
-        val inverted = !preinvert
+        val inverted = preinvert ^ branch_invert
         branch_taken := (inverted && ex_b_use) || ex_j
       }
 
@@ -272,7 +286,7 @@ class SunolCore extends Module {
             alu_out := op1 ^ op2
           }
           is(5.U) {
-            alu_out := Mux(ex_alu_add_arith, op1.asSInt() >> op2(4, 0), op1 >> op2(4, 0))
+            alu_out := Mux(ex_alu_add_arith, (op1.asSInt() >> op2(4, 0)).asUInt(), op1 >> op2(4, 0))
           }
           is(6.U) {
             alu_out := op1 | op2
@@ -310,12 +324,13 @@ class SunolCore extends Module {
   {
     val mem = io.dmem
     me_ready := !me_valid || (mem.resp || !me_re)
+    mem.re := me_re && (me_valid && wb_ready)
+    mem.size := me_width
+    mem.addr := me_aluout
+    mem.wdata := me_wdata
+    mem.we := me_we && (me_valid && wb_ready)
     when(me_valid && wb_ready) {
-      mem.re := me_re
-      mem.size := me_width
-      mem.addr := me_aluout
-      mem.wdata := me_wdata
-      mem.we := me_we
+
       wb_mem := mem.rdata
 
       wb_valid := (mem.resp || !me_re) //assumming writes always take 1 cycle, if not change to !(me_re || me_we)
