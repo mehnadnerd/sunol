@@ -173,6 +173,8 @@ class SunolCore extends Module {
             ex_rs1_num := 0.U
             ex_op1source := source1_rs1 // TODO: fix this hack
             ex_op2source := source2_imm
+            ex_alu_funct := 0.U // add
+            ex_alu_add_arith := 0.U //also addd
             ex_wb_en := true.B
           }
           is(OPCODE_LOAD.U) {
