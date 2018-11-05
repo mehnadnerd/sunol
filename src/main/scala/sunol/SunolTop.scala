@@ -24,15 +24,15 @@ class SunolTop extends Module {
   io.dcache_addr := dmem.addr
   io.icache_addr := imem.addr
   val sizemask = Mux(dmem.size === 0.U, 1.U(4.W), Mux(dmem.size === 1.U, 3.U(4.W), 7.U(4.W)))
-  io.dcache_we := Cat(Seq.fill(4)(dmem.we)) & dmem.size //TODO: fix this - should be
-  io.dcache_re := true.B
-  io.icache_re := true.B
+  io.dcache_we := Cat(Seq.fill(4)(dmem.we)) & sizemask //TODO: fix this - should be
+  io.dcache_re := dmem.re
+  io.icache_re := imem.re
   io.dcache_din := dmem.wdata
   dmem.rdata := io.dcache_dout
   imem.data := io.icache_dout
 
-  dmem.resp := io.stall
-  imem.resp := io.stall
+  dmem.resp := !io.stall
+  imem.resp := !io.stall
   //io.stall //TODO what is this
   io.csr := core.io.tohost
 }
