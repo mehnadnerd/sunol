@@ -37,7 +37,7 @@ class SunolCore extends Module {
   val ex_ready = Wire(Bool())
   val ex_rs1 = Reg(UInt(32.W)) // rs1
   val source1_rs1 :: source1_pc :: source1_zero :: Nil = Enum(3)
-  val ex_op1source = Reg(UInt(1.W)) // whether op1 comes from rs1 or something else
+  val ex_op1source = Reg(UInt(2.W)) // whether op1 comes from rs1 or something else
   val ex_rs2 = Reg(UInt(32.W)) // rs2
   val source2_rs2 :: source2_imm :: Nil = Enum(2)
   val ex_op2source = Reg(UInt(1.W)) // whether op2 comes from rs1 or something else
