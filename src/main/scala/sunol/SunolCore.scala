@@ -94,8 +94,8 @@ class SunolCore extends Module {
   //instruction fetch
   {
     io.imem.addr := pc
-    io.imem.re := if_pc_valid
-    when(RegNext(if_pc_valid) && de_ready) {
+    io.imem.re := true.B
+    when(RegNext(if_pc_valid) && de_ready && !RegNext(branch_taken)) {
       de_inst := io.imem.data.asTypeOf(RVInstruction())
       de_valid := io.imem.resp
       de_pc := RegNext(pc)
