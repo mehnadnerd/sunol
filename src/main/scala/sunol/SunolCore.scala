@@ -315,7 +315,7 @@ class SunolCore extends Module {
       me_valid := true.B
     }
   }.otherwise {
-    when(me_we || (io.dmem.resp && me_re)) { // after doing thing with side effects, stop doing it again?? TODO: is this better
+    when((!me_re) || (io.dmem.resp && me_re)) { // after doing thing with side effects, stop doing it again?? TODO: is this better
       me_valid := false.B
     }
     //me_valid := false.B // TODO: can this result in invaliding something in the mem stage that shouldn't be? hopefully not
@@ -366,7 +366,7 @@ class SunolCore extends Module {
 
   //bypassing stuff -- out here b/c reverse ordering
 
-  when(me_ready && de_valid) { // can only do this bypassing when decoding
+  when(me_ready && de_valid && !branch_taken) { // can only do this bypassing when decoding
     when(wb_valid) { //from wb
       //bypassing code
       when(de_inst.full(19, 15) === wb_rd_num && wb_en && wb_rd_num =/= 0.U) {
