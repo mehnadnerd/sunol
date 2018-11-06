@@ -291,7 +291,7 @@ class SunolCore extends Module {
     //branching
     {
       val branch_invert = ex_b_ctrl(0)
-      val branch_signed = ex_b_ctrl(1)
+      val branch_signed = !ex_b_ctrl(1)
       val branch_lt_eq = ex_b_ctrl(2)
 
       val preinvert = Mux(branch_lt_eq, Mux(branch_signed, ex_rs1.asSInt() < ex_rs2.asSInt(), ex_rs1 < ex_rs2), ex_rs1 === ex_rs2)
