@@ -95,7 +95,7 @@ class SunolCore extends Module {
   {
     io.imem.addr := pc
     io.imem.re := if_pc_valid
-    when(if_pc_valid && de_ready) {
+    when(RegNext(if_pc_valid) && de_ready) {
       de_inst := io.imem.data.asTypeOf(RVInstruction())
       de_valid := io.imem.resp
       de_pc := RegNext(pc)
@@ -315,7 +315,7 @@ class SunolCore extends Module {
       me_valid := true.B
     }
   }.otherwise {
-    when((!me_re) || (io.dmem.resp && me_re)) { // after doing thing with side effects, stop doing it again?? TODO: is this better
+    when(!me_re || io.dmem.resp) { // after doing thing with side effects, stop doing it again?? TODO: is this better
       me_valid := false.B
     }
     //me_valid := false.B // TODO: can this result in invaliding something in the mem stage that shouldn't be? hopefully not
