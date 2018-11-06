@@ -317,6 +317,7 @@ class SunolCore extends Module {
       me_wdata := ex_rs2
       me_rd_num := ex_rd_num
       me_wb_en := ex_wb_en
+      me_wb_src := ex_wb_src
       me_valid := true.B
     }
   }.otherwise {
