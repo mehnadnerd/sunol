@@ -138,7 +138,7 @@ class SunolCore extends Module {
       ex_op2source := DontCare
       ex_mem_re := false.B
       ex_mem_we := false.B
-      ex_wb_src := DontCare
+      ex_wb_src := wbs_alu
       ex_wb_en := false.B
       ex_b_use := false.B
       ex_j := false.B
@@ -189,6 +189,7 @@ class SunolCore extends Module {
             ex_alu_add_arith := 0.U //also addd
             ex_mem_re := true.B
             ex_wb_en := true.B
+            ex_wb_src := wbs_mem
           }
           is(OPCODE_STORE.U) {
             ex_imm := imm_s
@@ -213,6 +214,7 @@ class SunolCore extends Module {
             ex_alu_funct := 0.U // add
             ex_alu_add_arith := 0.U //also add
             ex_wb_en := true.B
+            ex_wb_src := wbs_pc4
             ex_j := true.B
           }
           is(OPCODE_JALR.U) {
@@ -222,6 +224,7 @@ class SunolCore extends Module {
             ex_alu_funct := 0.U // add
             ex_alu_add_arith := 0.U //also add
             ex_wb_en := true.B
+            ex_wb_src := wbs_pc4
             ex_j := true.B
           }
           is(OPCODE_SYSTEM.U) { // only system supporting is cssrw/i
