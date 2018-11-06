@@ -314,18 +314,6 @@ class SunolCore extends Module {
       me_wb_en := ex_wb_en
       me_valid := true.B
     }
-
-    when(me_ready && de_valid) {
-      //bypassing code
-      when(de_inst.full(19, 15) === ex_rd_num && ex_wb_src === wbs_alu && ex_wb_en && ex_rd_num =/= 0.U) {
-        //rs1 bypass
-        ex_rs1 := alu_out
-      }
-      when(de_inst.full(24, 20) === ex_rd_num && ex_wb_src === wbs_alu && ex_wb_en && ex_rd_num =/= 0.U) {
-        //rs1 bypass
-        ex_rs2 := alu_out
-      }
-    }
   }.otherwise {
     when(me_we || (io.dmem.resp && me_re)) { // after doing thing with side effects, stop doing it again?? TODO: is this better
       me_valid := false.B
@@ -427,8 +415,12 @@ class SunolCore extends Module {
       //need to kill bad instructions
       de_valid := false.B
       ex_valid := false.B
+      if_pc_valid := false.B
     }
-    if_pc_valid := true.B
+    when(!if_pc_valid) {
+      if_pc_valid := true.B //delaying pc by one cycle
+    }
+
   }
 }
 
