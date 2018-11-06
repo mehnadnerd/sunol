@@ -29,12 +29,15 @@ class SunolCore extends Module {
   val if_pc_valid = Reg(Bool()) // whether this pc is valid and instruction
   //decode
   val de_ready = Wire(Bool())
-  val de_inst = Reg(RVInstruction()) // instruction to be decoded
   val de_valid = RegInit(false.B) // whether instruction is valid
   val de_pc = Reg(UInt(32.W))
+  val de_inst = Reg(RVInstruction()) // instruction to be decoded
 
   //execute
   val ex_ready = Wire(Bool())
+  val ex_valid = RegInit(false.B) // whether the things to execute are valid
+  val ex_pc = Reg(UInt(32.W))
+
   val ex_rs1 = Reg(UInt(32.W)) // rs1
   val source1_rs1 :: source1_pc :: source1_zero :: Nil = Enum(3)
   val ex_op1source = Reg(UInt(2.W)) // whether op1 comes from rs1 or something else
@@ -47,7 +50,6 @@ class SunolCore extends Module {
   val ex_rs2_num = Reg(UInt(5.W)) // for bypassing
   val ex_alu_funct = Reg(UInt(3.W)) // alu funct
   val ex_alu_add_arith = Reg(Bool()) // alu add/sub arithmetic/logical
-  val ex_valid = RegInit(false.B) // whether the things to execute are valid
 
   val ex_b_ctrl = Reg(UInt(3.W))
   val ex_b_use = Reg(Bool()) // whether or not should evaluate branch condition
@@ -62,32 +64,32 @@ class SunolCore extends Module {
   val wbs_alu :: wbs_mem :: wbs_pc4 :: Nil = Enum(3)
   val ex_wb_src = Reg(UInt(2.W))
   val ex_wb_en = Reg(Bool())
-  val ex_pc = Reg(UInt(32.W))
 
   //mem
   val me_ready = Wire(Bool())
+  val me_valid = RegInit(false.B) //mem things are valid
+  val me_pc4 = Reg(UInt(32.W))
+
+
   val me_alu_out = Reg(UInt(32.W)) // alu output
   val me_width = Reg(UInt(3.W)) // width
   //val me_addr = Reg(UInt(32.W)) // addr for mem //TODO: might be same as aluout
   val me_wdata = Reg(UInt(32.W)) // data to be written -- always rs2?
   val me_re = Reg(Bool()) // read enable
   val me_we = Reg(Bool()) // write enable
-  val me_valid = RegInit(false.B) //mem things are valid
 
   val me_wb_src = Reg(UInt(2.W))
-  val me_pc4 = Reg(UInt(32.W))
   val me_rd_num = Reg(UInt(5.W))
   val me_wb_en = Reg(Bool())
 
   //writeback
   val wb_ready = Wire(Bool())
+  val wb_valid = RegInit(false.B)
+  val wb_pc4 = Reg(UInt(32.W))
   val wb_rd_num = Reg(UInt(5.W)) // reg to writeback to
   val wb_alu = Reg(UInt(32.W))
-  val wb_pc4 = Reg(UInt(32.W))
   val wb_mem = Reg(UInt(32.W))
   val wb_en = Reg(Bool()) //
-  val wb_valid = RegInit(false.B)
-
   val wb_src = Reg(UInt(2.W))
 
   //updates - datapath
@@ -389,7 +391,7 @@ class SunolCore extends Module {
         ex_rs2 := me_alu_out
       }
     }
-    when(me_ready && de_valid) { //from ex
+    when(me_ready && ex_valid) { //from ex
       //bypassing code
       when(de_inst.full(19, 15) === ex_rd_num && ex_wb_src === wbs_alu && ex_wb_en && ex_rd_num =/= 0.U) {
         //rs1 bypass
