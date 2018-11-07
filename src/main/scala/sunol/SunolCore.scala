@@ -108,13 +108,17 @@ class SunolCore extends Module {
     }
   }
   //decode
+
+  val rs1_num = de_inst.full(19, 15)
+  val rs2_num = de_inst.full(24, 20)
+  val ld_hazard = Wire(Bool())
+
   {
-    de_ready := ex_ready || !de_valid
+    ld_hazard := de_valid && ((ex_valid && ex_mem_re && (ex_rd_num === rs1_num || ex_rd_num === rs2_num)) || (me_valid && me_re && (me_rd_num === rs1_num || me_rd_num === rs2_num)))
+    de_ready := (ex_ready && !ld_hazard) || !de_valid
     when(de_valid && ex_ready) {
       val opcode = de_inst.full(6, 0)
 
-      val rs1_num = de_inst.full(19, 15)
-      val rs2_num = de_inst.full(24, 20)
       val rd_num = de_inst.full(11, 7)
       ex_rs1_num := rs1_num
       ex_rs2_num := rs2_num
@@ -248,12 +252,11 @@ class SunolCore extends Module {
           }
         }
       }
-      ex_valid := true.B
+      ex_valid := !ld_hazard
     }.otherwise {
       when(me_ready) { // this is when ex will be done
         ex_valid := false.B // make sure not invalidate when shouldn't
       }
-
     }
   }
 
