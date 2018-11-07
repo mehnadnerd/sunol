@@ -292,17 +292,19 @@ class SunolCore extends Module {
     }
   }
 
-  when(ex_valid && me_ready) { //TODO: added me_ready to this so don't lose link when jumping
-    //branching
-    {
-      val branch_invert = ex_b_ctrl(0)
-      val branch_signed = !ex_b_ctrl(1)
-      val branch_lt_eq = ex_b_ctrl(2)
+  //branching
+  {
+    val branch_invert = ex_b_ctrl(0)
+    val branch_signed = !ex_b_ctrl(1)
+    val branch_lt_eq = ex_b_ctrl(2)
 
-      val preinvert = Mux(branch_lt_eq, Mux(branch_signed, ex_rs1.asSInt() < ex_rs2.asSInt(), ex_rs1 < ex_rs2), ex_rs1 === ex_rs2)
-      val inverted = preinvert ^ branch_invert
-      branch_taken := (inverted && ex_b_use) || ex_j
-    }
+    val preinvert = Mux(branch_lt_eq, Mux(branch_signed, ex_rs1.asSInt() < ex_rs2.asSInt(), ex_rs1 < ex_rs2), ex_rs1 === ex_rs2)
+    val inverted = preinvert ^ branch_invert
+    branch_taken := ((inverted && ex_b_use) || ex_j) && ex_valid && me_ready
+  }
+
+  when(ex_valid && me_ready) { //TODO: added me_ready to this so don't lose link when jumping
+
 
     branch_addr := alu_out
     when(me_ready) {
