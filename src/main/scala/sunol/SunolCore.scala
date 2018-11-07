@@ -333,7 +333,7 @@ class SunolCore extends Module {
   //mem
   {
     val mem = io.dmem
-    me_ready := !me_valid || (mem.resp || !me_re)
+    me_ready := !me_valid || ((mem.resp || !me_re) && me_alu_out === RegNext(me_alu_out))
     mem.re := me_re && (me_valid && wb_ready)
     mem.size := me_width
     mem.addr := me_alu_out
@@ -343,7 +343,7 @@ class SunolCore extends Module {
 
       wb_mem := mem.rdata
 
-      wb_valid := (mem.resp || !me_re) //assumming writes always take 1 cycle, if not change to !(me_re || me_we)
+      wb_valid := (mem.resp || !me_re) && me_alu_out === RegNext(me_alu_out) //assumming writes always take 1 cycle, if not change to !(me_re || me_we)
 
       wb_alu := me_alu_out
       wb_src := me_wb_src
