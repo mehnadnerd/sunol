@@ -323,7 +323,7 @@ class SunolCore extends Module {
       me_valid := true.B
     }
   }.otherwise {
-    when(!me_re || io.dmem.resp) { // after doing thing with side effects, stop doing it again?? TODO: is this better
+    when((io.dmem.resp && me_alu_out === RegNext(me_alu_out) && me_re === RegNext(me_re)) || !me_re) { // after doing thing with side effects, stop doing it again?? TODO: is this better
       me_valid := false.B
     }
     //me_valid := false.B // TODO: can this result in invaliding something in the mem stage that shouldn't be? hopefully not
@@ -334,18 +334,17 @@ class SunolCore extends Module {
 
   //mem
   {
-    val mem = io.dmem
-    me_ready := !me_valid || ((mem.resp && me_alu_out === RegNext(me_alu_out) && me_re === RegNext(me_re)) || !me_re)
-    mem.re := me_re && (me_valid && wb_ready)
-    mem.size := me_width
-    mem.addr := me_alu_out
-    mem.wdata := me_wdata
-    mem.we := me_we && (me_valid && wb_ready)
+    me_ready := !me_valid || ((io.dmem.resp && me_alu_out === RegNext(me_alu_out) && me_re === RegNext(me_re)) || !me_re)
+    io.dmem.re := me_re && (me_valid && wb_ready)
+    io.dmem.size := me_width
+    io.dmem.addr := me_alu_out
+    io.dmem.wdata := me_wdata
+    io.dmem.we := me_we && (me_valid && wb_ready)
     when(me_valid && wb_ready) {
 
-      wb_mem := mem.rdata
+      wb_mem := io.dmem.rdata
 
-      wb_valid := ((mem.resp && me_alu_out === RegNext(me_alu_out) && me_re === RegNext(me_re)) || !me_re) //assumming writes always take 1 cycle, if not change to !(me_re || me_we)
+      wb_valid := ((io.dmem.resp && me_alu_out === RegNext(me_alu_out) && me_re === RegNext(me_re)) || !me_re) //assumming writes always take 1 cycle, if not change to !(me_re || me_we)
 
       wb_alu := me_alu_out
       wb_src := me_wb_src
