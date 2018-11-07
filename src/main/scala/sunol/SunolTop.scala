@@ -30,7 +30,7 @@ class SunolTop extends Module {
   io.dcache_din := dmem.wdata
   imem.data := io.icache_dout
 
-  val sext = dmem.size(2)
+  val sext = !dmem.size(2)
 
   dmem.rdata := io.dcache_dout
   when (dmem.size(1,0) === 0.U) {
