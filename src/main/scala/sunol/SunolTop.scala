@@ -1,7 +1,7 @@
 package sunol
 
 import chisel3._
-import chisel3.util.Cat
+import chisel3.util.{Cat, Fill}
 
 
 class SunolTop extends Module {
@@ -28,8 +28,16 @@ class SunolTop extends Module {
   io.dcache_re := dmem.re
   io.icache_re := imem.re
   io.dcache_din := dmem.wdata
-  dmem.rdata := io.dcache_dout
   imem.data := io.icache_dout
+
+  val sext = dmem.size(2)
+
+  dmem.rdata := io.dcache_dout
+  when (dmem.size(1,0) === 0.U) {
+    dmem.rdata := Cat(Fill(24, sext & io.dcache_dout(7)), io.dcache_dout(7,0))
+  }.elsewhen(dmem.size(1,0) === 1.U) {
+    dmem.rdata := Cat(Fill(16, sext & io.dcache_dout(15)), io.dcache_dout(15,0))
+  }
 
   dmem.resp := !io.stall
   imem.resp := !io.stall
