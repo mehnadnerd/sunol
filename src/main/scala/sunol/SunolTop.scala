@@ -23,7 +23,7 @@ class SunolTop extends Module {
 
   io.dcache_addr := dmem.addr
   io.icache_addr := imem.addr
-  val sizemask = Mux(dmem.size === 0.U, 1.U(4.W), Mux(dmem.size === 1.U, 3.U(4.W), 7.U(4.W)))
+  val sizemask = Mux(dmem.size === 0.U, 1.U(4.W), Mux(dmem.size === 1.U, 3.U(4.W), 15.U(4.W)))
   io.dcache_we := Cat(Seq.fill(4)(dmem.we)) & sizemask //TODO: fix this - should be
   io.dcache_re := dmem.re
   io.icache_re := imem.re
