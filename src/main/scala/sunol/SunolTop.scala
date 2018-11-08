@@ -1,7 +1,7 @@
 package sunol
 
 import chisel3._
-import chisel3.util.{Cat, Fill}
+import chisel3.util.{Cat, Fill, MuxLookup}
 
 
 class SunolTop extends Module {
@@ -23,20 +23,34 @@ class SunolTop extends Module {
 
   io.dcache_addr := dmem.addr
   io.icache_addr := imem.addr
-  val sizemask = Mux(dmem.size === 0.U, 1.U(4.W), Mux(dmem.size === 1.U, 3.U(4.W), 15.U(4.W)))
-  io.dcache_we := Cat(Seq.fill(4)(dmem.we)) & sizemask //TODO: fix this - should be
   io.dcache_re := dmem.re
   io.icache_re := imem.re
-  io.dcache_din := dmem.wdata
   imem.data := io.icache_dout
 
+  // Handle writes
+  val shift = WireInit(io.dcache_addr(1,0))
+  val sizemask = MuxLookup(dmem.size, 15.U(4.W), Array(0.U -> 1.U(4.W), 1.U -> 3.U(4.W))) << shift
+  io.dcache_din := dmem.wdata << (shift << 3.U).asUInt()
+  io.dcache_we := Cat(Seq.fill(4)(dmem.we)) & sizemask.asUInt()
+
+  // Handle loads
   val sext = !dmem.size(2)
 
   dmem.rdata := io.dcache_dout
   when (dmem.size(1,0) === 0.U) {
     dmem.rdata := Cat(Fill(24, sext & io.dcache_dout(7)), io.dcache_dout(7,0))
+    when (io.dcache_addr(1,0) === 1.U) {
+      dmem.rdata := Cat(Fill(24, sext & io.dcache_dout(15)), io.dcache_dout(15,8))
+    }.elsewhen (io.dcache_addr(1,0) === 2.U) {
+      dmem.rdata := Cat(Fill(24, sext & io.dcache_dout(23)), io.dcache_dout(23,16))
+    }.elsewhen (io.dcache_addr(1,0) === 3.U) {
+      dmem.rdata := Cat(Fill(24, sext & io.dcache_dout(31)), io.dcache_dout(31,24))
+    }
   }.elsewhen(dmem.size(1,0) === 1.U) {
     dmem.rdata := Cat(Fill(16, sext & io.dcache_dout(15)), io.dcache_dout(15,0))
+    when (io.dcache_addr(1,0) === 2.U) {
+      dmem.rdata := Cat(Fill(16, sext & io.dcache_dout(31)), io.dcache_dout(31,16))
+    }
   }
 
   dmem.resp := !io.stall

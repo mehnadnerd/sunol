@@ -94,21 +94,22 @@ class SunolCore extends Module {
 
   //updates - datapath
   //instruction fetch
+
   {
     io.imem.addr := pc
     io.imem.re := true.B
-    when(RegNext(if_pc_valid) && de_ready && !RegNext(branch_taken)) {
+    when(RegNext(if_pc_valid) && de_ready && !RegNext(branch_taken) && RegNext(de_ready)) {
       de_inst := io.imem.data.asTypeOf(RVInstruction())
       de_valid := io.imem.resp
       de_pc := RegNext(pc)
     }.otherwise {
-      when(ex_ready) { //decode is done whenever ex accepts it
+      when(de_ready) {
         de_valid := false.B
       }
     }
   }
-  //decode
 
+  //decode
   val rs1_num = de_inst.full(19, 15)
   val rs2_num = de_inst.full(24, 20)
   val ld_hazard = Wire(Bool())
@@ -417,9 +418,16 @@ class SunolCore extends Module {
     //things to do:
     //normal pc+4
     //from alu - this covers branch target addresses and jal/jalr
+
+    val old_pc = RegInit(pc)
+
     when(if_pc_valid && de_ready && io.imem.resp) { // if sending
       pc := pc + 4.U
+      old_pc := pc
+    }.elsewhen(!de_ready) {
+      pc := old_pc
     }
+
     when(branch_taken) { // branch or jump
       pc := branch_addr
       //need to kill bad instructions
@@ -430,7 +438,6 @@ class SunolCore extends Module {
     when(!if_pc_valid) {
       if_pc_valid := true.B //delaying pc by one cycle
     }
-
   }
 }
 
