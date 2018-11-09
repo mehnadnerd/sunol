@@ -142,7 +142,7 @@ class SunolCore extends Module {
       de_valid := io.imem.resp
     }.otherwise {
       when (de_ready) {
-        de_ready := false.B
+        de_valid := false.B
       }
     }
   }
