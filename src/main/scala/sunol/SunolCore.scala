@@ -26,7 +26,14 @@ class SunolCore extends Module {
 
   //instruction fetch inputs
   //val if_pc = Reg(UInt(32.W)) // pc to fetch instruction at //TODO: should this just be pc?
-  val if_pc_valid = Reg(Bool()) // whether this pc is valid and instruction
+  // val if_pc_valid = Reg(Bool()) // whether this pc is valid and instruction
+  val if_valid = Wire(Bool()) // whether this pc is valid and instruction
+
+  // felay delay pseudo-stage
+  val ifd_pc = RegInit(pc)
+  val ifd_valid = RegInit(false.B)
+  val ifd_ready = Wire(Bool())
+
   //decode
   val de_ready = Wire(Bool())
   val de_valid = RegInit(false.B) // whether instruction is valid
@@ -95,6 +102,7 @@ class SunolCore extends Module {
   //updates - datapath
   //instruction fetch
 
+  /*
   {
     io.imem.addr := pc
     io.imem.re := true.B
@@ -107,15 +115,47 @@ class SunolCore extends Module {
         de_valid := false.B
       }
     }
+  }*/
+  {
+    io.imem.addr := pc
+    io.imem.re := true.B
+
+    if_valid := !branch_taken
+
+    when (if_valid && ifd_ready) {
+      ifd_pc := pc
+      ifd_valid := true.B
+    }.otherwise {
+      when (ifd_ready) {
+        ifd_valid := false.B
+      }
+    }
+  }
+
+  // instruction fetch delay pseudo-stage
+  {
+    ifd_ready := !ifd_valid || (de_ready && io.imem.resp)
+
+    when (ifd_valid && de_ready) {
+      de_inst := io.imem.data.asTypeOf(RVInstruction())
+      de_pc := ifd_pc
+      de_valid := io.imem.resp
+    }.otherwise {
+      when (de_ready) {
+        de_ready := false.B
+      }
+    }
   }
 
   //decode
-  val rs1_num = de_inst.full(19, 15)
-  val rs2_num = de_inst.full(24, 20)
   val ld_hazard = Wire(Bool())
 
   {
+    val rs1_num = de_inst.full(19, 15)
+    val rs2_num = de_inst.full(24, 20)
+
     ld_hazard := de_valid && ((ex_valid && ex_mem_re && (ex_rd_num === rs1_num || ex_rd_num === rs2_num)) || (me_valid && me_re && (me_rd_num === rs1_num || me_rd_num === rs2_num)))
+
     de_ready := (ex_ready && !ld_hazard) || !de_valid
     when(de_valid && ex_ready) {
       val opcode = de_inst.full(6, 0)
@@ -419,6 +459,7 @@ class SunolCore extends Module {
     //normal pc+4
     //from alu - this covers branch target addresses and jal/jalr
 
+    /*
     val old_pc = RegInit(pc)
 
     when(if_pc_valid && de_ready && io.imem.resp) { // if sending
@@ -427,17 +468,23 @@ class SunolCore extends Module {
     }.elsewhen(!de_ready) {
       pc := old_pc
     }
+    */
+
+    when (ifd_ready) {
+      pc := pc + 4.U
+    }
 
     when(branch_taken) { // branch or jump
       pc := branch_addr
       //need to kill bad instructions
+      ifd_valid := false.B
       de_valid := false.B
       ex_valid := false.B
-      if_pc_valid := false.B
+      // if_pc_valid := false.B
     }
-    when(!if_pc_valid) {
+    /*when(!if_pc_valid) {
       if_pc_valid := true.B //delaying pc by one cycle
-    }
+    }*/
   }
 }
 
