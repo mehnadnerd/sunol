@@ -340,13 +340,7 @@ class SunolCore extends Module {
     val inverted = preinvert ^ branch_invert
     branch_taken := ((inverted && ex_b_use) || ex_j) && ex_valid && me_ready
 
-    // val brp = Module(new BranchPredictor)
-    // brp.io.pc := ex_pc
-    // brp.io.offset := ex_imm
-    // val branch_predicted = ex_b_use && brp.io.taken
-    val branch_predicted = ex_br_pred
-
-    branch_mispredicted := ex_valid && (branch_taken =/= branch_predicted)
+    branch_mispredicted := ex_valid && (branch_taken =/= ex_br_pred)
     branch_addr := Mux(branch_taken, alu_out, ex_pc + 4.U)
   }
 
@@ -415,7 +409,7 @@ class SunolCore extends Module {
 
   //bypassing stuff -- out here b/c reverse ordering
 
-  when(me_ready && de_valid /*&& !branch_taken*/) { // can only do this bypassing when decoding
+  when(me_ready && de_valid) { // can only do this bypassing when decoding
     when(wb_valid) { //from wb
       when(de_inst.full(19, 15) === wb_rd_num && wb_en && wb_rd_num =/= 0.U) {
         ex_rs1 := Mux(wb_src === wbs_alu, wb_alu, Mux(wb_src === wbs_mem, wb_mem, wb_pc4))
@@ -425,19 +419,19 @@ class SunolCore extends Module {
       }
     }
     when(me_valid) { //from mem
-      when(de_inst.full(19, 15) === me_rd_num && me_wb_src === wbs_alu && me_wb_en && me_rd_num =/= 0.U) {
-        ex_rs1 := me_alu_out
+      when(de_inst.full(19, 15) === me_rd_num && me_wb_en && me_rd_num =/= 0.U) {
+        ex_rs1 := Mux(me_wb_src === wbs_alu, me_alu_out, wb_pc4)
       }
-      when(de_inst.full(24, 20) === me_rd_num && me_wb_src === wbs_alu && me_wb_en && me_rd_num =/= 0.U) {
-        ex_rs2 := me_alu_out
+      when(de_inst.full(24, 20) === me_rd_num && me_wb_en && me_rd_num =/= 0.U) {
+        ex_rs2 := Mux(me_wb_src === wbs_alu, me_alu_out, wb_pc4)
       }
     }
     when(me_ready && ex_valid) { //from ex
-      when(de_inst.full(19, 15) === ex_rd_num && ex_wb_src === wbs_alu && ex_wb_en && ex_rd_num =/= 0.U) {
-        ex_rs1 := alu_out
+      when(de_inst.full(19, 15) === ex_rd_num && ex_wb_en && ex_rd_num =/= 0.U) {
+        ex_rs1 := Mux(ex_wb_src === wbs_alu, alu_out, ex_pc + 4.U)
       }
-      when(de_inst.full(24, 20) === ex_rd_num && ex_wb_src === wbs_alu && ex_wb_en && ex_rd_num =/= 0.U) {
-        ex_rs2 := alu_out
+      when(de_inst.full(24, 20) === ex_rd_num && ex_wb_en && ex_rd_num =/= 0.U) {
+        ex_rs2 := Mux(ex_wb_src === wbs_alu, alu_out, ex_pc + 4.U)
       }
     }
   }
@@ -447,12 +441,8 @@ class SunolCore extends Module {
     //things to do:
     //from alu - this covers branch target addresses and jal/jalr
 
-    // when(branch_taken) { // branch or jump
     when (branch_mispredicted) {
       pc := branch_addr // TODO: I think we waste a cycle here
-
-      // pc := branch_addr + 4.U
-      // io.imem.addr := branch_addr
 
       //need to kill bad instructions
       ifd_valid := false.B
