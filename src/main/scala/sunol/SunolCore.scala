@@ -116,10 +116,8 @@ class SunolCore extends Module {
       }
     }
   }*/
-  {
-    io.imem.addr := pc
-    io.imem.re := true.B
 
+  {
     if_valid := !branch_taken
 
     when (if_valid && ifd_ready) {
@@ -146,6 +144,9 @@ class SunolCore extends Module {
       }
     }
   }
+
+  io.imem.re := true.B
+  io.imem.addr := Mux(ifd_ready, pc, ifd_pc) // Only increment imem.addr if the fetch stage isn't stalling
 
   //decode
   val ld_hazard = Wire(Bool())
@@ -459,17 +460,6 @@ class SunolCore extends Module {
     //normal pc+4
     //from alu - this covers branch target addresses and jal/jalr
 
-    /*
-    val old_pc = RegInit(pc)
-
-    when(if_pc_valid && de_ready && io.imem.resp) { // if sending
-      pc := pc + 4.U
-      old_pc := pc
-    }.elsewhen(!de_ready) {
-      pc := old_pc
-    }
-    */
-
     when (ifd_ready) {
       pc := pc + 4.U
     }
@@ -480,11 +470,7 @@ class SunolCore extends Module {
       ifd_valid := false.B
       de_valid := false.B
       ex_valid := false.B
-      // if_pc_valid := false.B
     }
-    /*when(!if_pc_valid) {
-      if_pc_valid := true.B //delaying pc by one cycle
-    }*/
   }
 }
 
