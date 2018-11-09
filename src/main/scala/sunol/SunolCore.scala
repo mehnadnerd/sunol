@@ -20,16 +20,12 @@ class SunolCore extends Module {
   io.tohost := csr
 
   val branch_taken = Wire(Bool()) // TODO: do this better
+  val branch_mispredicted = Wire(Bool())
   val branch_addr = Wire(UInt(32.W))
 
   // register declarations
 
-  //instruction fetch inputs
-  //val if_pc = Reg(UInt(32.W)) // pc to fetch instruction at //TODO: should this just be pc?
-  // val if_pc_valid = Reg(Bool()) // whether this pc is valid and instruction
-  val if_valid = Wire(Bool()) // whether this pc is valid and instruction
-
-  // felay delay pseudo-stage
+  //fetch
   val ifd_pc = RegInit(pc)
   val ifd_valid = RegInit(false.B)
   val ifd_ready = Wire(Bool())
@@ -39,11 +35,13 @@ class SunolCore extends Module {
   val de_valid = RegInit(false.B) // whether instruction is valid
   val de_pc = Reg(UInt(32.W))
   val de_inst = Reg(RVInstruction()) // instruction to be decoded
+  val de_br_pred = Reg(Bool())
 
   //execute
   val ex_ready = Wire(Bool())
   val ex_valid = RegInit(false.B) // whether the things to execute are valid
   val ex_pc = Reg(UInt(32.W))
+  val ex_br_pred = Reg(Bool())
 
   val ex_rs1 = Reg(UInt(32.W)) // rs1
   val source1_rs1 :: source1_pc :: source1_zero :: Nil = Enum(3)
@@ -100,53 +98,46 @@ class SunolCore extends Module {
   val wb_src = Reg(UInt(2.W))
 
   //updates - datapath
-  //instruction fetch
 
-  /*
+  //instruction fetch superstage
   {
-    io.imem.addr := pc
-    io.imem.re := true.B
-    when(RegNext(if_pc_valid) && de_ready && !RegNext(branch_taken) && RegNext(de_ready)) {
-      de_inst := io.imem.data.asTypeOf(RVInstruction())
-      de_valid := io.imem.resp
-      de_pc := RegNext(pc)
-    }.otherwise {
-      when(de_ready) {
-        de_valid := false.B
-      }
-    }
-  }*/
+    val brp = Module(new BranchPredictor)
+    val branch_predicted = Wire(Bool())
 
-  {
-    if_valid := !branch_taken
+    // instruction fetch pseudo-stage
+    io.imem.re := ifd_ready
+    io.imem.addr := Mux(branch_predicted, brp.io.target, pc)
 
-    when (if_valid && ifd_ready) {
-      ifd_pc := pc
+    when(ifd_ready) {
+      pc := Mux(branch_predicted, brp.io.target + 4.U, pc + 4.U)
+
+      ifd_pc := io.imem.addr
       ifd_valid := true.B
-    }.otherwise {
-      when (ifd_ready) {
-        ifd_valid := false.B
+    }
+
+    // instruction fetch delay pseudo-stage
+    {
+      ifd_ready := !ifd_valid || (de_ready && io.imem.resp)
+
+      when(ifd_valid && de_ready) {
+        de_inst := io.imem.data.asTypeOf(RVInstruction())
+        de_pc := ifd_pc
+        de_br_pred := branch_predicted
+        de_valid := io.imem.resp
+      }.otherwise {
+        when(de_ready) {
+          de_valid := false.B
+        }
       }
     }
-  }
 
-  // instruction fetch delay pseudo-stage
-  {
-    ifd_ready := !ifd_valid || (de_ready && io.imem.resp)
-
-    when (ifd_valid && de_ready) {
-      de_inst := io.imem.data.asTypeOf(RVInstruction())
-      de_pc := ifd_pc
-      de_valid := io.imem.resp
-    }.otherwise {
-      when (de_ready) {
-        de_valid := false.B
-      }
+    // Branch prediction (inside instruction fetch delay pseudo-stage)
+    {
+      brp.io.pc := ifd_pc
+      brp.io.inst := io.imem.data.asTypeOf(RVInstruction())
+      branch_predicted := ifd_valid && brp.io.taken
     }
   }
-
-  io.imem.re := true.B
-  io.imem.addr := Mux(ifd_ready, pc, ifd_pc) // Only increment imem.addr if the fetch stage isn't stalling
 
   //decode
   val ld_hazard = Wire(Bool())
@@ -177,6 +168,8 @@ class SunolCore extends Module {
       ex_b_ctrl := de_inst.full(14, 12)
 
       ex_pc := de_pc
+
+      ex_br_pred := de_br_pred
 
       //defaults
       ex_imm := DontCare
@@ -346,17 +339,21 @@ class SunolCore extends Module {
     val preinvert = Mux(branch_lt_eq, Mux(branch_signed, ex_rs1.asSInt() < ex_rs2.asSInt(), ex_rs1 < ex_rs2), ex_rs1 === ex_rs2)
     val inverted = preinvert ^ branch_invert
     branch_taken := ((inverted && ex_b_use) || ex_j) && ex_valid && me_ready
+
+    // val brp = Module(new BranchPredictor)
+    // brp.io.pc := ex_pc
+    // brp.io.offset := ex_imm
+    // val branch_predicted = ex_b_use && brp.io.taken
+    val branch_predicted = ex_br_pred
+
+    branch_mispredicted := ex_valid && (branch_taken =/= branch_predicted)
+    branch_addr := Mux(branch_taken, alu_out, ex_pc + 4.U)
   }
 
   when(ex_valid && me_ready) { //TODO: added me_ready to this so don't lose link when jumping
 
-
-    branch_addr := alu_out
     when(me_ready) {
       me_alu_out := alu_out
-    }
-
-    when(me_ready) {
       me_width := ex_mem_width
       me_re := ex_mem_re
       me_we := ex_mem_we
@@ -373,9 +370,9 @@ class SunolCore extends Module {
     }
     //me_valid := false.B // TODO: can this result in invaliding something in the mem stage that shouldn't be? hopefully not
     branch_taken := false.B
+    branch_mispredicted := false.B
     branch_addr := 0.U
   }
-
 
   //mem
   {
@@ -418,37 +415,28 @@ class SunolCore extends Module {
 
   //bypassing stuff -- out here b/c reverse ordering
 
-  when(me_ready && de_valid && !branch_taken) { // can only do this bypassing when decoding
+  when(me_ready && de_valid /*&& !branch_taken*/) { // can only do this bypassing when decoding
     when(wb_valid) { //from wb
-      //bypassing code
       when(de_inst.full(19, 15) === wb_rd_num && wb_en && wb_rd_num =/= 0.U) {
-        //rs1 bypass
         ex_rs1 := Mux(wb_src === wbs_alu, wb_alu, Mux(wb_src === wbs_mem, wb_mem, wb_pc4))
       }
       when(de_inst.full(24, 20) === wb_rd_num && wb_en && wb_rd_num =/= 0.U) {
-        //rs1 bypass
         ex_rs2 := Mux(wb_src === wbs_alu, wb_alu, Mux(wb_src === wbs_mem, wb_mem, wb_pc4))
       }
     }
     when(me_valid) { //from mem
-      //bypassing code
       when(de_inst.full(19, 15) === me_rd_num && me_wb_src === wbs_alu && me_wb_en && me_rd_num =/= 0.U) {
-        //rs1 bypass
         ex_rs1 := me_alu_out
       }
       when(de_inst.full(24, 20) === me_rd_num && me_wb_src === wbs_alu && me_wb_en && me_rd_num =/= 0.U) {
-        //rs1 bypass
         ex_rs2 := me_alu_out
       }
     }
     when(me_ready && ex_valid) { //from ex
-      //bypassing code
       when(de_inst.full(19, 15) === ex_rd_num && ex_wb_src === wbs_alu && ex_wb_en && ex_rd_num =/= 0.U) {
-        //rs1 bypass
         ex_rs1 := alu_out
       }
       when(de_inst.full(24, 20) === ex_rd_num && ex_wb_src === wbs_alu && ex_wb_en && ex_rd_num =/= 0.U) {
-        //rs1 bypass
         ex_rs2 := alu_out
       }
     }
@@ -457,15 +445,15 @@ class SunolCore extends Module {
   //control stuff
   {
     //things to do:
-    //normal pc+4
     //from alu - this covers branch target addresses and jal/jalr
 
-    when (ifd_ready) {
-      pc := pc + 4.U
-    }
+    // when(branch_taken) { // branch or jump
+    when (branch_mispredicted) {
+      pc := branch_addr // TODO: I think we waste a cycle here
 
-    when(branch_taken) { // branch or jump
-      pc := branch_addr
+      // pc := branch_addr + 4.U
+      // io.imem.addr := branch_addr
+
       //need to kill bad instructions
       ifd_valid := false.B
       de_valid := false.B
@@ -473,4 +461,3 @@ class SunolCore extends Module {
     }
   }
 }
-
