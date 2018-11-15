@@ -83,6 +83,8 @@ class SunolCore extends Module {
   val me_re = Reg(Bool()) // read enable
   val me_we = Reg(Bool()) // write enable
 
+  val me_dmem_resp = (io.dmem.resp && me_alu_out === RegNext(me_alu_out) && me_re === RegNext(me_re)) || !(me_re || me_we)
+
   val me_wb_src = Reg(UInt(2.W))
   val me_rd_num = Reg(UInt(5.W))
   val me_wb_en = Reg(Bool())
@@ -359,7 +361,7 @@ class SunolCore extends Module {
       me_valid := true.B
     }
   }.otherwise {
-    when((io.dmem.resp && me_alu_out === RegNext(me_alu_out) && me_re === RegNext(me_re)) || !me_re) { // after doing thing with side effects, stop doing it again?? TODO: is this better
+    when(me_dmem_resp) { // after doing thing with side effects, stop doing it again?? TODO: is this better
       me_valid := false.B
     }
     //me_valid := false.B // TODO: can this result in invaliding something in the mem stage that shouldn't be? hopefully not
@@ -370,7 +372,7 @@ class SunolCore extends Module {
 
   //mem
   {
-    me_ready := !me_valid || ((io.dmem.resp && me_alu_out === RegNext(me_alu_out) && me_re === RegNext(me_re)) || !me_re)
+    me_ready := !me_valid || me_dmem_resp
     io.dmem.re := me_re && (me_valid && wb_ready)
     io.dmem.size := me_width
     io.dmem.addr := me_alu_out
@@ -380,7 +382,7 @@ class SunolCore extends Module {
 
       wb_mem := io.dmem.rdata
 
-      wb_valid := ((io.dmem.resp && me_alu_out === RegNext(me_alu_out) && me_re === RegNext(me_re)) || !me_re) //assumming writes always take 1 cycle, if not change to !(me_re || me_we)
+      wb_valid := me_dmem_resp //assumming writes always take 1 cycle, if not change to !(me_re || me_we)
 
       wb_alu := me_alu_out
       wb_src := me_wb_src
