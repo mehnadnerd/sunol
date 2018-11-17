@@ -81,6 +81,8 @@ class SunolCore extends Module {
   val me_re = Reg(Bool()) // read enable
   val me_we = Reg(Bool()) // write enable
 
+  val me_dmem_resp = (io.dmem.resp && me_alu_out === RegNext(me_alu_out) && me_re === RegNext(me_re)) || !(me_re || me_we)
+
   val me_wb_src = Reg(UInt(2.W))
   val me_rd_num = Reg(UInt(5.W))
   val me_wb_en = Reg(Bool())
@@ -361,7 +363,7 @@ class SunolCore extends Module {
       me_valid := true.B
     }
   }.otherwise {
-    when((io.dmem.resp && me_alu_out === RegNext(me_alu_out) && me_re === RegNext(me_re)) || !me_re) { // after doing thing with side effects, stop doing it again?? TODO: is this better
+    when(me_dmem_resp) { // after doing thing with side effects, stop doing it again?? TODO: is this better
       me_valid := false.B
     }
     //me_valid := false.B // TODO: can this result in invaliding something in the mem stage that shouldn't be? hopefully not
@@ -372,7 +374,7 @@ class SunolCore extends Module {
 
   //mem
   {
-    me_ready := !me_valid || ((io.dmem.resp && me_alu_out === RegNext(me_alu_out) && me_re === RegNext(me_re)) || !me_re)
+    me_ready := !me_valid || me_dmem_resp
     io.dmem.re := me_re && (me_valid && wb_ready)
     io.dmem.size := me_width
     io.dmem.addr := me_alu_out
@@ -382,7 +384,7 @@ class SunolCore extends Module {
 
       wb_mem := io.dmem.rdata
 
-      wb_valid := ((io.dmem.resp && me_alu_out === RegNext(me_alu_out) && me_re === RegNext(me_re)) || !me_re) //assumming writes always take 1 cycle, if not change to !(me_re || me_we)
+      wb_valid := me_dmem_resp //assumming writes always take 1 cycle, if not change to !(me_re || me_we)
 
       wb_alu := me_alu_out
       wb_src := me_wb_src
@@ -422,10 +424,10 @@ class SunolCore extends Module {
     }
     when(me_valid) { //from mem
       when(de_inst.full(19, 15) === me_rd_num && me_wb_en && me_rd_num =/= 0.U) {
-        ex_rs1 := Mux(me_wb_src === wbs_alu, me_alu_out, wb_pc4)
+        ex_rs1 := Mux(me_wb_src === wbs_alu, me_alu_out, me_pc4)
       }
       when(de_inst.full(24, 20) === me_rd_num && me_wb_en && me_rd_num =/= 0.U) {
-        ex_rs2 := Mux(me_wb_src === wbs_alu, me_alu_out, wb_pc4)
+        ex_rs2 := Mux(me_wb_src === wbs_alu, me_alu_out, me_pc4)
       }
     }
     when(me_ready && ex_valid) { //from ex
@@ -443,7 +445,7 @@ class SunolCore extends Module {
     //things to do:
     //from alu - this covers branch target addresses and jal/jalr
 
-    when (branch_mispredicted) {
+    when(branch_mispredicted) {
       pc := branch_addr // TODO: I think we waste a cycle here
 
       //need to kill bad instructions
