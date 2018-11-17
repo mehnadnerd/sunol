@@ -1,12 +1,14 @@
 package sunol
 
 import chisel3._
+import chisel3.util.{Cat, Fill, MuxLookup}
 
 // imem to core
 class SunolIMemCoreIO extends Bundle {
   val addr = Input(UInt(32.W))
   val re = Input(Bool())
 
+  val ready = Input(Bool())
   val data = Output(UInt(32.W))
   val valid = Output(Bool())
   val resp_addr = Output(UInt(32.W))
@@ -20,6 +22,7 @@ class SunolDMemCoreIO extends Bundle {
   val wdata = Input(UInt(32.W))
   val we = Input(Bool())
 
+  val ready = Input(Bool())
   val rdata = Output(UInt(32.W))
   val valid = Output(Bool())
   val resp_addr = Output(UInt(32.W))
@@ -70,6 +73,36 @@ class SunolICache extends Module {
     val imem = new SunolIMemCoreIO
     val mem = new SunolMainMemCacheIO
   })
+
+  val cache = Module(new SunolCache(8))
+  val c = cache.io
+  val m = io.mem
+
+  c.cpu_req_valid := io.imem.re
+  // := c.cpu_req_rdy //TODO: we just kind of assume this is true
+  c.cpu_req_addr := io.imem.addr
+  c.cpu_req_data := DontCare
+  c.cpu_req_write := 0.U
+
+  io.imem.valid := c.cpu_resp_val
+  io.imem.data := c.cpu_resp_data
+
+  m.read_req_valid := c.mem_req_val
+  c.mem_req_rdy := m.read_req_ready
+  m.read_req_addr := c.mem_req_addr
+  m.read_req_rw := c.mem_req_rw =/= 0.U
+
+  m.write_req_data_valid := c.mem_req_data_valid
+  c.mem_req_data_rdy := m.write_req_data_ready
+  m.write_req_data_bits := c.mem_req_data_bits
+  m.write_req_data_mask := c.mem_req_data_mask
+
+  c.mem_resp_val := m.read_resp_valid
+  c.mem_resp_data := m.read_resp_data
+
+  // Our additions
+  io.imem.resp_addr := c.cpu_resp_addr
+  c.associative := true.B
 }
 
 class SunolDCache extends Module {
@@ -77,6 +110,61 @@ class SunolDCache extends Module {
     val dmem = new SunolDMemCoreIO
     val mem = new SunolMainMemCacheIO
   })
+
+  val cache = Module(new SunolCache(8))
+  val c = cache.io
+  val m = io.mem
+
+  // Handle writes
+  val shift = WireInit(io.dmem.addr(1, 0))
+  val sizemask = MuxLookup(io.dmem.size, 15.U(4.W), Array(0.U -> 1.U(4.W), 1.U -> 3.U(4.W))) << shift
+
+  // Handle loads
+  val sext = !io.dmem.size(2)
+
+  io.dmem.rdata := c.cpu_resp_data
+  when(io.dmem.size(1, 0) === 0.U) {
+    io.dmem.rdata := Cat(Fill(24, sext & c.cpu_resp_data(7)), c.cpu_resp_data(7, 0))
+    when(io.dmem.addr(1, 0) === 1.U) {
+      io.dmem.rdata := Cat(Fill(24, sext & c.cpu_resp_data(15)), c.cpu_resp_data(15, 8))
+    }.elsewhen(io.dmem.addr(1, 0) === 2.U) {
+      io.dmem.rdata := Cat(Fill(24, sext & c.cpu_resp_data(23)), c.cpu_resp_data(23, 16))
+    }.elsewhen(io.dmem.addr(1, 0) === 3.U) {
+      io.dmem.rdata := Cat(Fill(24, sext & c.cpu_resp_data(31)), c.cpu_resp_data(31, 24))
+    }
+  }.elsewhen(io.dmem.size(1, 0) === 1.U) {
+    io.dmem.rdata := Cat(Fill(16, sext & c.cpu_resp_data(15)), c.cpu_resp_data(15, 0))
+    when(io.dmem.addr(1, 0) === 2.U) {
+      io.dmem.rdata := Cat(Fill(16, sext & c.cpu_resp_data(31)), c.cpu_resp_data(31, 16))
+    }
+  }
+
+  c.cpu_req_valid := io.dmem.re
+  // := c.cpu_req_rdy //TODO: we just kind of assume this is true
+  c.cpu_req_addr := io.dmem.addr
+  c.cpu_req_data := io.dmem.wdata << (shift << 3.U).asUInt()
+  c.cpu_req_write := Cat(Seq.fill(4)(io.dmem.we)) & sizemask.asUInt()
+
+  io.dmem.valid := c.cpu_resp_val
+
+  io.dmem.rdata := c.cpu_resp_data
+
+  m.read_req_valid := c.mem_req_val
+  c.mem_req_rdy := m.read_req_ready
+  m.read_req_addr := c.mem_req_addr
+  m.read_req_rw := c.mem_req_rw =/= 0.U
+
+  m.write_req_data_valid := c.mem_req_data_valid
+  c.mem_req_data_rdy := m.write_req_data_ready
+  m.write_req_data_bits := c.mem_req_data_bits
+  m.write_req_data_mask := c.mem_req_data_mask
+
+  c.mem_resp_val := m.read_resp_valid
+  c.mem_resp_data := m.read_resp_data
+
+  // Our additions
+  io.dmem.resp_addr := c.cpu_resp_addr
+  c.associative := true.B
 }
 
 class SunolMem extends Module {
