@@ -1,7 +1,7 @@
 package sunol
 
 import chisel3._
-import chisel3.util.{Cat, Fill, MuxLookup}
+import chisel3.util.{Cat, Fill, MuxLookup, RegEnable}
 
 
 class SunolTop extends Module {
@@ -28,6 +28,9 @@ class SunolTop extends Module {
   io.icache_re := imem.re
   imem.data := io.icache_dout
   imem.resp_addr := io.icache_resp_addr
+
+  imem.resp_addr := RegEnable(imem.addr, imem.re)
+  dmem.resp_addr := RegEnable(dmem.addr, dmem.re || dmem.we) //TODO: is this correct
 
   // Handle writes
   val shift = WireInit(io.dcache_addr(1, 0))
