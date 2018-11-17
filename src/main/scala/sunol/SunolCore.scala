@@ -7,8 +7,8 @@ import sunol.Constants._
 
 class SunolCore extends Module {
   val io = IO(new Bundle {
-    val imem = Flipped(new SunolIMemIO())
-    val dmem = Flipped(new SunolDMemIO())
+    val imem = Flipped(new SunolIMemCoreIO())
+    val dmem = Flipped(new SunolDMemCoreIO())
     val tohost = Output(UInt(32.W))
   })
 
@@ -106,7 +106,7 @@ class SunolCore extends Module {
 
     // instruction fetch pseudo-stage
     io.imem.re := ifd_ready
-    io.imem.addr := /*Mux(redo, ifd_pc,*/ Mux(branch_predicted, brp.io.target, pc)//)
+    io.imem.addr := /*Mux(redo, ifd_pc,*/ Mux(branch_predicted, brp.io.target, pc) //)
 
     when(ifd_ready) {
       pc := /*Mux(redo, pc,*/ Mux(branch_predicted, brp.io.target + 4.U, pc + 4.U) // )
@@ -117,14 +117,14 @@ class SunolCore extends Module {
 
     // instruction fetch delay pseudo-stage
     {
-      ifd_ready := !ifd_valid || (de_ready && io.imem.resp)
+      ifd_ready := !ifd_valid || (de_ready && io.imem.valid)
       redo := ifd_valid && ((ifd_pc >> 2).asUInt() =/= io.imem.resp_addr)
 
       when(ifd_valid && de_ready) {
         de_inst := io.imem.data.asTypeOf(RVInstruction())
         de_pc := ifd_pc
         de_br_pred := branch_predicted
-        de_valid := io.imem.resp && ((ifd_pc >> 2).asUInt() === io.imem.resp_addr)
+        de_valid := io.imem.valid && ((ifd_pc >> 2).asUInt() === io.imem.resp_addr)
       }.otherwise {
         when(de_ready) {
           de_valid := false.B
@@ -360,7 +360,7 @@ class SunolCore extends Module {
       me_valid := true.B
     }
   }.otherwise {
-    when((io.dmem.resp && me_alu_out === RegNext(me_alu_out) && me_re === RegNext(me_re)) || !me_re) { // after doing thing with side effects, stop doing it again?? TODO: is this better
+    when((io.dmem.valid && me_alu_out === RegNext(me_alu_out) && me_re === RegNext(me_re)) || !me_re) { // after doing thing with side effects, stop doing it again?? TODO: is this better
       me_valid := false.B
     }
     //me_valid := false.B // TODO: can this result in invaliding something in the mem stage that shouldn't be? hopefully not
@@ -371,7 +371,7 @@ class SunolCore extends Module {
 
   //mem
   {
-    me_ready := !me_valid || ((io.dmem.resp && me_alu_out === RegNext(me_alu_out) && me_re === RegNext(me_re)) || !me_re)
+    me_ready := !me_valid || ((io.dmem.valid && me_alu_out === RegNext(me_alu_out) && me_re === RegNext(me_re)) || !me_re)
     io.dmem.re := me_re && (me_valid && wb_ready)
     io.dmem.size := me_width
     io.dmem.addr := me_alu_out
@@ -381,7 +381,7 @@ class SunolCore extends Module {
 
       wb_mem := io.dmem.rdata
 
-      wb_valid := ((io.dmem.resp && me_alu_out === RegNext(me_alu_out) && me_re === RegNext(me_re)) || !me_re) //assumming writes always take 1 cycle, if not change to !(me_re || me_we)
+      wb_valid := ((io.dmem.valid && me_alu_out === RegNext(me_alu_out) && me_re === RegNext(me_re)) || !me_re) //assumming writes always take 1 cycle, if not change to !(me_re || me_we)
 
       wb_alu := me_alu_out
       wb_src := me_wb_src
@@ -442,7 +442,7 @@ class SunolCore extends Module {
     //things to do:
     //from alu - this covers branch target addresses and jal/jalr
 
-    when (branch_mispredicted) {
+    when(branch_mispredicted) {
       pc := branch_addr // TODO: I think we waste a cycle here
 
       //need to kill bad instructions

@@ -30,7 +30,7 @@ class SunolTop extends Module {
   imem.resp_addr := io.icache_resp_addr
 
   // Handle writes
-  val shift = WireInit(io.dcache_addr(1,0))
+  val shift = WireInit(io.dcache_addr(1, 0))
   val sizemask = MuxLookup(dmem.size, 15.U(4.W), Array(0.U -> 1.U(4.W), 1.U -> 3.U(4.W))) << shift
   io.dcache_din := dmem.wdata << (shift << 3.U).asUInt()
   io.dcache_we := Cat(Seq.fill(4)(dmem.we)) & sizemask.asUInt()
@@ -39,24 +39,24 @@ class SunolTop extends Module {
   val sext = !dmem.size(2)
 
   dmem.rdata := io.dcache_dout
-  when (dmem.size(1,0) === 0.U) {
-    dmem.rdata := Cat(Fill(24, sext & io.dcache_dout(7)), io.dcache_dout(7,0))
-    when (io.dcache_addr(1,0) === 1.U) {
-      dmem.rdata := Cat(Fill(24, sext & io.dcache_dout(15)), io.dcache_dout(15,8))
-    }.elsewhen (io.dcache_addr(1,0) === 2.U) {
-      dmem.rdata := Cat(Fill(24, sext & io.dcache_dout(23)), io.dcache_dout(23,16))
-    }.elsewhen (io.dcache_addr(1,0) === 3.U) {
-      dmem.rdata := Cat(Fill(24, sext & io.dcache_dout(31)), io.dcache_dout(31,24))
+  when(dmem.size(1, 0) === 0.U) {
+    dmem.rdata := Cat(Fill(24, sext & io.dcache_dout(7)), io.dcache_dout(7, 0))
+    when(io.dcache_addr(1, 0) === 1.U) {
+      dmem.rdata := Cat(Fill(24, sext & io.dcache_dout(15)), io.dcache_dout(15, 8))
+    }.elsewhen(io.dcache_addr(1, 0) === 2.U) {
+      dmem.rdata := Cat(Fill(24, sext & io.dcache_dout(23)), io.dcache_dout(23, 16))
+    }.elsewhen(io.dcache_addr(1, 0) === 3.U) {
+      dmem.rdata := Cat(Fill(24, sext & io.dcache_dout(31)), io.dcache_dout(31, 24))
     }
-  }.elsewhen(dmem.size(1,0) === 1.U) {
-    dmem.rdata := Cat(Fill(16, sext & io.dcache_dout(15)), io.dcache_dout(15,0))
-    when (io.dcache_addr(1,0) === 2.U) {
-      dmem.rdata := Cat(Fill(16, sext & io.dcache_dout(31)), io.dcache_dout(31,16))
+  }.elsewhen(dmem.size(1, 0) === 1.U) {
+    dmem.rdata := Cat(Fill(16, sext & io.dcache_dout(15)), io.dcache_dout(15, 0))
+    when(io.dcache_addr(1, 0) === 2.U) {
+      dmem.rdata := Cat(Fill(16, sext & io.dcache_dout(31)), io.dcache_dout(31, 16))
     }
   }
 
-  dmem.resp := !io.stall
-  imem.resp := !io.stall
+  dmem.valid := !io.stall
+  imem.valid := !io.stall
   //io.stall //TODO what is this
   io.csr := core.io.tohost
 }
