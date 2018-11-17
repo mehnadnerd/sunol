@@ -15,6 +15,7 @@ class SunolTop extends Module {
     val dcache_dout = Input(UInt(32.W))
     val icache_dout = Input(UInt(32.W))
     val icache_resp_addr = Input(UInt(30.W))
+    val icache_cancel = Output(Bool())
     val stall = Input(Bool())
     val csr = Output(UInt(32.W))
   })
@@ -28,6 +29,7 @@ class SunolTop extends Module {
   io.icache_re := imem.re
   imem.data := io.icache_dout
   imem.resp_addr := io.icache_resp_addr
+  io.icache_cancel := imem.cancel
 
   // Handle writes
   val shift = WireInit(io.dcache_addr(1,0))

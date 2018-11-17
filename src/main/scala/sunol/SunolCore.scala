@@ -106,10 +106,11 @@ class SunolCore extends Module {
 
     // instruction fetch pseudo-stage
     io.imem.re := ifd_ready
-    io.imem.addr := /*Mux(redo, ifd_pc,*/ Mux(branch_predicted, brp.io.target, pc)//)
+    io.imem.addr := Mux(branch_predicted, brp.io.target, pc)
+    io.imem.cancel := branch_mispredicted
 
     when(ifd_ready) {
-      pc := /*Mux(redo, pc,*/ Mux(branch_predicted, brp.io.target + 4.U, pc + 4.U) // )
+      pc := Mux(branch_predicted, brp.io.target + 4.U, pc + 4.U)
 
       ifd_pc := io.imem.addr
       ifd_valid := true.B
@@ -124,7 +125,7 @@ class SunolCore extends Module {
         de_inst := io.imem.data.asTypeOf(RVInstruction())
         de_pc := ifd_pc
         de_br_pred := branch_predicted
-        de_valid := io.imem.resp && ((ifd_pc >> 2).asUInt() === io.imem.resp_addr)
+        de_valid := io.imem.resp
       }.otherwise {
         when(de_ready) {
           de_valid := false.B

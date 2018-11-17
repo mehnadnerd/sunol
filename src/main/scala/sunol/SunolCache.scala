@@ -72,6 +72,7 @@ class SunolCache(rows: Int) extends Module {
     // Our additions
     val cpu_resp_addr = Output(UInt(30.W))
     val associative = Input(Bool())
+    val cancel = Input(Bool())
   })
 
   // Methods
@@ -106,10 +107,9 @@ class SunolCache(rows: Int) extends Module {
   }
 
   // State
-  val idle :: check :: w1 :: w2 :: w3 :: w4 :: r0 :: r1 :: r2 :: r3 :: r4 :: done :: Nil = Enum(12)
+  val idle :: check :: w1 :: w2 :: w3 :: w4 :: r0 :: r1 :: r2 :: r3 :: r4 :: done :: cancel :: Nil = Enum(13)
   val state = RegInit(idle)
 
-  val already_read = RegInit(false.B) // TODO: why the fuck is this needed?
   val old_resp = RegInit(io.cpu_resp_data)
   old_resp := io.cpu_resp_data
   val old_req_addr = Reg(UInt(io.cpu_req_addr.getWidth.W))
@@ -124,9 +124,9 @@ class SunolCache(rows: Int) extends Module {
   val mem_req_data_fire = io.mem_req_data_rdy && io.mem_req_data_valid
 
   val hit = Wire(Bool())
-  hit := tags_way.map(tw => isHit(tw.io.O, io.cpu_req_addr)).reduce(_ || _)
+  hit := tags_way.map(tw => isHit(tw.io.O, old_req_addr)).reduce(_ || _)
   val hit_data = Wire(UInt(128.W))
-  hit_data := Mux(isHit(tags_way(0).io.O, io.cpu_req_addr), data_way(0).io.O, data_way(1).io.O)
+  hit_data := Mux(isHit(tags_way(0).io.O, old_req_addr), data_way(0).io.O, data_way(1).io.O)
 
   val evict = Wire(Bool())
   evict := hit && tags_way.map(tw => isValid(tw.io.O) && isDirty(tw.io.O)).reduce(_ && _)
@@ -192,6 +192,10 @@ class SunolCache(rows: Int) extends Module {
       // next_state := Mux(io.cpu_resp_val, idle, done)
       next_state := Mux(RegNext(state) === done, idle, done)
     }
+
+    is (cancel) {
+      next_state := Mux(RegNext(RegNext(RegNext(RegNext(state)))) === cancel, check, cancel)
+    }
   }
 
   when (state >= w1 && state <= w4) {
@@ -200,6 +204,10 @@ class SunolCache(rows: Int) extends Module {
 
   when (state >= r1 && state <= r4) {
     next_state := state + 1.U
+  }
+
+  when (io.cancel) {
+    next_state := cancel
   }
 
   // Output logic
@@ -223,7 +231,7 @@ class SunolCache(rows: Int) extends Module {
     d.io.CSB := 0.U
 
     // Defaults
-    d.io.A := cpuAddrToDataCacheAddr(io.cpu_req_addr)
+    d.io.A := cpuAddrToDataCacheAddr(old_req_addr)
     d.io.WEB := 1.U // read
     d.io.BYTEMASK := 0.U
     d.io.I := DontCare
@@ -235,7 +243,7 @@ class SunolCache(rows: Int) extends Module {
     t.io.CSB := 0.U
 
     // Defaults
-    t.io.A := cpuAddrToTagCacheAddr(io.cpu_req_addr)
+    t.io.A := cpuAddrToTagCacheAddr(old_req_addr)
     t.io.WEB := 1.U // read
     t.io.I := DontCare
   }
@@ -244,6 +252,9 @@ class SunolCache(rows: Int) extends Module {
     is (idle) {
       io.cpu_req_rdy := true.B
       old_req_addr := io.cpu_req_addr
+
+      data_way.foreach( _.io.A := cpuAddrToDataCacheAddr(io.cpu_req_addr) )
+      tags_way.foreach( _.io.A := cpuAddrToTagCacheAddr(io.cpu_req_addr) )
     }
 
     is (check) {
@@ -340,7 +351,6 @@ class SunolCache(rows: Int) extends Module {
 
       when (io.mem_req_rdy) {
         io.mem_req_val := true.B
-        already_read := false.B
       }
 
       // Invalidate current cacheline
@@ -360,7 +370,7 @@ class SunolCache(rows: Int) extends Module {
         when (i.U === eviction_target) {
           data_way(i).io.I := io.mem_resp_data
           data_way(i).io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W))
-          data_way(i).io.WEB := 0.U // !(io.mem_resp_val && !already_read) // 0.U // write
+          data_way(i).io.WEB := 0.U // 0.U // write
           data_way(i).io.BYTEMASK := (-1).S(16.W).asUInt()
         }
       }
@@ -374,7 +384,7 @@ class SunolCache(rows: Int) extends Module {
         when (i.U === eviction_target) {
           data_way(i).io.I := io.mem_resp_data
           data_way(i).io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W))
-          data_way(i).io.WEB := 0.U // !(io.mem_resp_val && !already_read) // 0.U // write
+          data_way(i).io.WEB := 0.U // 0.U // write
           data_way(i).io.BYTEMASK := (-1).S(16.W).asUInt()
         }
       }
@@ -388,7 +398,7 @@ class SunolCache(rows: Int) extends Module {
         when (i.U === eviction_target) {
           data_way(i).io.I := io.mem_resp_data
           data_way(i).io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W))
-          data_way(i).io.WEB := 0.U // !(io.mem_resp_val && !already_read) // 0.U // write
+          data_way(i).io.WEB := 0.U // 0.U // write
           data_way(i).io.BYTEMASK := (-1).S(16.W).asUInt()
         }
       }
@@ -402,7 +412,7 @@ class SunolCache(rows: Int) extends Module {
         when (i.U === eviction_target) {
           data_way(i).io.I := io.mem_resp_data
           data_way(i).io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W))
-          data_way(i).io.WEB := 0.U // !(io.mem_resp_val && !already_read) // 0.U // write
+          data_way(i).io.WEB := 0.U // 0.U // write
           data_way(i).io.BYTEMASK := (-1).S(16.W).asUInt()
 
           // Update tags
@@ -415,10 +425,16 @@ class SunolCache(rows: Int) extends Module {
     is (done) {
       // TODO STORES
 
-      // TODO get rid of RegNext
+      // TODO get rid of RegNext. Right now, we wait to make sure the memory is read out properly
       when (RegNext(state) === done) {
         io.cpu_resp_val := true.B
-        io.cpu_resp_data := Mux(eviction_target === 0.U, data_way(0).io.O, data_way(1).io.O)
+        io.cpu_resp_data := hit_data >> (old_req_addr(1, 0) << 5).asUInt()
+      }
+    }
+
+    is (cancel) {
+      when (io.cpu_req_valid) {
+        old_req_addr := io.cpu_req_addr
       }
     }
   }
