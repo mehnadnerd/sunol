@@ -99,8 +99,6 @@ class SunolCore extends Module {
 
   //updates - datapath
 
-  val redo = Wire(Bool())
-
   //instruction fetch superstage
   {
     val brp = Module(new BranchPredictor)
