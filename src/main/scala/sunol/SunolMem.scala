@@ -7,6 +7,7 @@ class SunolIMemIO extends Bundle {
   val re = Input(Bool())
   val data = Output(UInt(32.W))
   val resp = Output(Bool())
+  val resp_addr = Output(UInt(32.W))
 }
 
 class SunolDMemIO extends Bundle {

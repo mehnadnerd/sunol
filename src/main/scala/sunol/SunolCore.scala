@@ -65,7 +65,6 @@ class SunolCore extends Module {
   val ex_mem_re = Reg(Bool())
   val ex_mem_we = Reg(Bool())
 
-
   val wbs_alu :: wbs_mem :: wbs_pc4 :: Nil = Enum(3)
   val ex_wb_src = Reg(UInt(2.W))
   val ex_wb_en = Reg(Bool())
@@ -74,7 +73,6 @@ class SunolCore extends Module {
   val me_ready = Wire(Bool())
   val me_valid = RegInit(false.B) //mem things are valid
   val me_pc4 = Reg(UInt(32.W))
-
 
   val me_alu_out = Reg(UInt(32.W)) // alu output
   val me_width = Reg(UInt(3.W)) // width
@@ -99,6 +97,8 @@ class SunolCore extends Module {
 
   //updates - datapath
 
+  val redo = Wire(Bool())
+
   //instruction fetch superstage
   {
     val brp = Module(new BranchPredictor)
@@ -106,10 +106,10 @@ class SunolCore extends Module {
 
     // instruction fetch pseudo-stage
     io.imem.re := ifd_ready
-    io.imem.addr := Mux(branch_predicted, brp.io.target, pc)
+    io.imem.addr := /*Mux(redo, ifd_pc,*/ Mux(branch_predicted, brp.io.target, pc)//)
 
     when(ifd_ready) {
-      pc := Mux(branch_predicted, brp.io.target + 4.U, pc + 4.U)
+      pc := /*Mux(redo, pc,*/ Mux(branch_predicted, brp.io.target + 4.U, pc + 4.U) // )
 
       ifd_pc := io.imem.addr
       ifd_valid := true.B
@@ -118,12 +118,13 @@ class SunolCore extends Module {
     // instruction fetch delay pseudo-stage
     {
       ifd_ready := !ifd_valid || (de_ready && io.imem.resp)
+      redo := ifd_valid && ((ifd_pc >> 2).asUInt() =/= io.imem.resp_addr)
 
       when(ifd_valid && de_ready) {
         de_inst := io.imem.data.asTypeOf(RVInstruction())
         de_pc := ifd_pc
         de_br_pred := branch_predicted
-        de_valid := io.imem.resp
+        de_valid := io.imem.resp && ((ifd_pc >> 2).asUInt() === io.imem.resp_addr)
       }.otherwise {
         when(de_ready) {
           de_valid := false.B
