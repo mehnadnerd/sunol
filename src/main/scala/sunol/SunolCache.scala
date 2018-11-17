@@ -129,6 +129,8 @@ class SunolCache(rows: Int) extends Module {
 
   val hit = Wire(Bool())
   hit := tags_way.map(tw => isHit(tw.io.O, old_req_addr)).reduce(_ || _)
+  val hit_index = Wire(UInt(1.W))
+  hit_index := Mux(isHit(tags_way(0).io.O, old_req_addr), 0.U, 1.U)
   val hit_data = Wire(UInt(128.W))
   hit_data := Mux(isHit(tags_way(0).io.O, old_req_addr), data_way(0).io.O, data_way(1).io.O)
 
@@ -138,7 +140,17 @@ class SunolCache(rows: Int) extends Module {
   val rand = LFSR16()(0)
 
   val eviction_target = Wire(UInt(1.W))
-  eviction_target := Mux(!isValid(tags_way(0).io.O), 0.U, Mux(!isValid(tags_way(1).io.O), 1.U, rand)) & io.associative
+  val eviction_target_wire = Wire(UInt(1.W))
+  val eviction_target_reg = Reg(UInt(1.W))
+
+  eviction_target_wire := Mux(!isValid(tags_way(0).io.O), 0.U,
+    Mux(!isValid(tags_way(1).io.O), 1.U,
+      Mux(!isDirty(tags_way(0).io.O), 0.U,
+        Mux(!isDirty(tags_way(1).io.O), 1.U, rand)))) & io.associative
+
+  when (state === check) { eviction_target_reg := eviction_target_wire }
+  when (state > check) { eviction_target := eviction_target_reg }.
+    otherwise { eviction_target := eviction_target_wire }
 
   val eviction_tag_cache_io = Wire(new TagCacheIO)
   val eviction_data_cache_io = Wire(new DataCacheIO)
@@ -273,7 +285,7 @@ class SunolCache(rows: Int) extends Module {
 
         // Handle stores
         for (i <- 0 to 1) {
-          when((i.U === eviction_target) && (old_req_write =/= 0.U)) {
+          when((i.U === hit_index) && (old_req_write =/= 0.U)) {
             val position_on_line = (old_req_addr(LINE_LENGTH_BITS-1, 0) << 5).asUInt()
             val modified_data = hit_data & (~((-1).S(32.W) << position_on_line)).asUInt() | (old_req_data << position_on_line).asUInt()
 
