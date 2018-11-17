@@ -474,6 +474,8 @@ class SunolCache(rows: Int) extends Module {
     }
 
     is (done) {
+      // TODO go straight back to check from this stage to save a cycle
+
       // TODO get rid of RegNext. Right now, we wait to make sure the memory is read out properly
       when (RegNext(state) === done) {
         for (i <- 0 to 1) {

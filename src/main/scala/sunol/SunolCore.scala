@@ -81,7 +81,7 @@ class SunolCore extends Module {
   val me_re = Reg(Bool()) // read enable
   val me_we = Reg(Bool()) // write enable
 
-  val me_dmem_resp = (io.dmem.resp && me_alu_out === RegNext(me_alu_out) && me_re === RegNext(me_re)) || !(me_re || me_we)
+  val me_dmem_resp = (io.dmem.resp && me_alu_out === RegNext(me_alu_out) && (me_re === RegNext(me_re)) && (me_we === RegNext(me_we))) || !(me_re || me_we)
 
   val me_wb_src = Reg(UInt(2.W))
   val me_rd_num = Reg(UInt(5.W))
