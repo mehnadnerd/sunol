@@ -24,10 +24,12 @@ class TagCacheIO extends Bundle {
   val O = Output(UInt(32.W))
 }
 
+// This gives us a max of 256 rows
 class SRAM1RW256x128 extends BlackBox {
   val io = IO(new DataCacheIO)
 }
 
+// This gives us a max of 256 rows
 class SRAM1RW64x32 extends BlackBox {
   val io = IO(new TagCacheIO)
 }
@@ -178,11 +180,12 @@ class SunolCache(rows: Int) extends Module {
 
     is (check) {
       when (hit) {
-        next_state := idle
+        next_state := Mux((old_req_write === 0.U) && cpu_req_fire, check, idle)
       }.elsewhen (evict) {
         next_state := Mux(mem_req_data_fire, w1, check)
       }.otherwise {
-        next_state := r0
+        // next_state := r0
+        next_state := Mux(mem_req_fire, r1, r0)
       }
     }
 
@@ -191,12 +194,11 @@ class SunolCache(rows: Int) extends Module {
     }
 
     is (done) {
-      // next_state := Mux(io.cpu_resp_val, idle, done)
       next_state := Mux(RegNext(state) === done, idle, done)
     }
 
     is (cancel) {
-      next_state := Mux(RegNext(RegNext(RegNext(RegNext(state)))) === cancel, check, cancel)
+      next_state := Mux(RegNext(state) === cancel, check, cancel) // TODO can we save one more cycle here?
     }
   }
 
@@ -269,7 +271,7 @@ class SunolCache(rows: Int) extends Module {
         io.cpu_resp_addr := old_req_addr
         io.cpu_resp_data := hit_data >> (old_req_addr(1, 0) << 5).asUInt()
 
-        // TODO Handle stores
+        // Handle stores
         for (i <- 0 to 1) {
           when((i.U === eviction_target) && (old_req_write =/= 0.U)) {
             val position_on_line = (old_req_addr(LINE_LENGTH_BITS-1, 0) << 5).asUInt()
@@ -284,11 +286,37 @@ class SunolCache(rows: Int) extends Module {
             tags_way(i).io.WEB := 0.U // write
           }
         }
+
+        // If there is no store, then just go straight back to this cycle
+        // TODO can we save a cycle on stores as well?
+        when (old_req_write === 0.U) {
+          io.cpu_req_rdy := true.B
+
+          old_req_addr := io.cpu_req_addr
+          old_req_data := io.cpu_req_data
+          old_req_write := io.cpu_req_write
+
+          data_way.foreach(_.io.A := cpuAddrToDataCacheAddr(io.cpu_req_addr))
+          tags_way.foreach(_.io.A := cpuAddrToTagCacheAddr(io.cpu_req_addr))
+        }
       }.elsewhen(evict) {
         // Set dcache pointer to 0
         data_way.foreach(_.io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), 0.U(SCALING_FACTOR_BITS)))
       }.otherwise {
-        // TODO go to r1 instead of r0
+        // Initialize MEM pointer to 0
+        io.mem_req_addr := Cat(old_req_addr(old_req_addr.getWidth - 1, LINE_LENGTH_BITS + SCALING_FACTOR_BITS), Fill(SCALING_FACTOR_BITS, 0.U))
+
+        when (io.mem_req_rdy) {
+          io.mem_req_val := true.B
+        }
+
+        // Invalidate current cacheline
+        for (i <- 0 to 1) {
+          when(i.U === eviction_target) {
+            tags_way(i).io.I := Fill(32, 0.U(1.W))
+            tags_way(i).io.WEB := 0.U // write
+          }
+        }
       }
     }
 
@@ -448,7 +476,6 @@ class SunolCache(rows: Int) extends Module {
     is (done) {
       // TODO get rid of RegNext. Right now, we wait to make sure the memory is read out properly
       when (RegNext(state) === done) {
-        // Handle stores
         for (i <- 0 to 1) {
           when((i.U === eviction_target) && (old_req_write =/= 0.U)) {
             val position_on_line = (old_req_addr(LINE_LENGTH_BITS-1, 0) << 5).asUInt()
