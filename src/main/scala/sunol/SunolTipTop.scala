@@ -26,24 +26,25 @@ class SunolTipTop extends Module {
 
   val mem = Module(new SunolMem)
   core.io.dmem <> mem.io.dmem
-  core.io.imem <> mem.io.imem {
-    val mm = mem.io.mainmem
+  core.io.imem <> mem.io.imem
 
-    io.mem_req_valid := mm.req_valid
-    mm.req_ready := io.mem_req_ready
-    io.mem_req_rw := mm.req_rw
-    io.mem_req_addr := mm.req_addr
-    io.mem_req_tag := mm.req_tag
+  val mm = mem.io.mainmem
 
-    io.mem_req_data_valid := mm.req_data_valid
-    mm.req_data_ready := io.mem_req_data_ready
-    io.mem_req_data_bits := mm.req_data_bits
-    io.mem_req_data_mask := mm.req_data_mask
+  io.mem_req_valid := mm.req_valid
+  mm.req_ready := io.mem_req_ready
+  io.mem_req_rw := mm.req_rw
+  io.mem_req_addr := mm.req_addr
+  io.mem_req_tag := mm.req_tag
 
-    mm.resp_valid := io.mem_resp_valid
-    mm.resp_tag := io.mem_resp_tag
-    mm.resp_data := io.mem_resp_data
-  }
+  io.mem_req_data_valid := mm.req_data_valid
+  mm.req_data_ready := io.mem_req_data_ready
+  io.mem_req_data_bits := mm.req_data_bits
+  io.mem_req_data_mask := mm.req_data_mask
+
+  mm.resp_valid := io.mem_resp_valid
+  mm.resp_tag := io.mem_resp_tag
+  mm.resp_data := io.mem_resp_data
+
 
 }
 

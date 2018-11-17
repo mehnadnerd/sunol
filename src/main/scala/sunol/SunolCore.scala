@@ -11,6 +11,8 @@ class SunolCore extends Module {
     val dmem = Flipped(new SunolDMemCoreIO())
     val tohost = Output(UInt(32.W))
   })
+  io.imem.ready := true.B // TODO: fix
+  io.dmem.ready := true.B // TODO: fix
 
   val pc = RegInit(0x2000.U(32.W))
   val regfile = Reg(Vec(32, UInt(32.W))) // TODO: handle x0
