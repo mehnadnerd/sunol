@@ -24,12 +24,12 @@ class TagCacheIO extends Bundle {
   val O = Output(UInt(32.W))
 }
 
-// This gives us a max of 256 rows
+// This gives us a max of 256/4=64 rows
 class SRAM1RW256x128 extends BlackBox {
   val io = IO(new DataCacheIO)
 }
 
-// This gives us a max of 256 rows
+// This gives us a max of 64 rows
 class SRAM1RW64x32 extends BlackBox {
   val io = IO(new TagCacheIO)
 }
@@ -72,7 +72,6 @@ class SunolCache(rows: Int) extends Module {
     val mem_resp_data = Input(UInt(128.W))
 
     // Our additions
-    val cpu_resp_addr = Output(UInt(30.W))
     val associative = Input(Bool())
     val cancel = Input(Bool())
   })
@@ -163,20 +162,6 @@ class SunolCache(rows: Int) extends Module {
     eviction_data_cache_io := data_way(1).io
   }
 
-  // Debug
-  val debug_tag_cache0_addr = WireInit(addrMetadataInTag(tags_way(0).io.O))
-  val debug_tag_cache1_addr = WireInit(addrMetadataInTag(tags_way(1).io.O))
-  val debug_addr_addr = WireInit(addrMetadataInCpuAddr(io.cpu_req_addr))
-
-  val debug_tag_row_num = WireInit(cpuAddrToTagCacheAddr(io.cpu_req_addr))
-  val debug_data_row_num = WireInit(cpuAddrToDataCacheAddr(io.cpu_req_addr))
-
-  chisel3.core.dontTouch(debug_tag_cache0_addr)
-  chisel3.core.dontTouch(debug_tag_cache1_addr)
-  chisel3.core.dontTouch(debug_addr_addr)
-  chisel3.core.dontTouch(debug_tag_row_num)
-  chisel3.core.dontTouch(debug_data_row_num)
-
   // Next state logic
   val next_state = WireInit(idle)
   state := next_state
@@ -240,8 +225,6 @@ class SunolCache(rows: Int) extends Module {
   io.mem_req_data_bits := DontCare // UInt(128.W)
   io.mem_req_data_mask := 0.U // UInt(16.W)
 
-  io.cpu_resp_addr := old_req_addr
-
   data_way.foreach { d =>
     d.io.CE := clock
     d.io.OEB := 0.U
@@ -280,7 +263,6 @@ class SunolCache(rows: Int) extends Module {
     is (check) {
       when (hit) {
         io.cpu_resp_val := true.B
-        io.cpu_resp_addr := old_req_addr
         io.cpu_resp_data := hit_data >> (old_req_addr(1, 0) << 5).asUInt()
 
         // Handle stores

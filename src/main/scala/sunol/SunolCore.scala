@@ -81,7 +81,9 @@ class SunolCore extends Module {
   val me_re = Reg(Bool()) // read enable
   val me_we = Reg(Bool()) // write enable
 
-  val me_dmem_resp = (io.dmem.resp && me_alu_out === RegNext(me_alu_out) && (me_re === RegNext(me_re)) && (me_we === RegNext(me_we))) || !(me_re || me_we)
+  val me_dcache_started = RegInit(false.B)
+  // TODO just use a fucking valid signal; Jesus Christ I should have just added one
+  val me_dmem_resp = (io.dmem.resp_val && (me_alu_out === RegNext(me_alu_out)) && (me_re === RegNext(me_re)) && (me_we === RegNext(me_we))) || !(me_re || me_we)
 
   val me_wb_src = Reg(UInt(2.W))
   val me_rd_num = Reg(UInt(5.W))
@@ -98,8 +100,6 @@ class SunolCore extends Module {
   val wb_src = Reg(UInt(2.W))
 
   //updates - datapath
-
-  val redo = Wire(Bool())
 
   //instruction fetch superstage
   {
@@ -121,7 +121,6 @@ class SunolCore extends Module {
     // instruction fetch delay pseudo-stage
     {
       ifd_ready := !ifd_valid || (de_ready && io.imem.resp)
-      redo := ifd_valid && ((ifd_pc >> 2).asUInt() =/= io.imem.resp_addr)
 
       when(ifd_valid && de_ready) {
         de_inst := io.imem.data.asTypeOf(RVInstruction())
@@ -360,6 +359,7 @@ class SunolCore extends Module {
       me_rd_num := ex_rd_num
       me_wb_en := ex_wb_en
       me_wb_src := ex_wb_src
+      me_dcache_started := false.B
       me_valid := true.B
     }
   }.otherwise {
@@ -380,7 +380,10 @@ class SunolCore extends Module {
     io.dmem.addr := me_alu_out
     io.dmem.wdata := me_wdata
     io.dmem.we := me_we && (me_valid && wb_ready)
+
     when(me_valid && wb_ready) {
+
+      when(io.dmem.resp) { me_dcache_started := true.B }
 
       wb_mem := io.dmem.rdata
 
