@@ -416,7 +416,8 @@ class SunolCore extends Module {
 
   //bypassing stuff -- out here b/c reverse ordering
 
-  when(me_ready && de_valid) { // can only do this bypassing when decoding
+  // when(me_ready && de_valid) { // can only do this bypassing when decoding
+  when(ex_ready && de_valid) { // can only do this bypassing when decoding
     when(wb_valid) { //from wb
       when(de_inst.full(19, 15) === wb_rd_num && wb_en && wb_rd_num =/= 0.U) {
         ex_rs1 := Mux(wb_src === wbs_alu, wb_alu, Mux(wb_src === wbs_mem, wb_mem, wb_pc4))
@@ -433,7 +434,8 @@ class SunolCore extends Module {
         ex_rs2 := Mux(me_wb_src === wbs_alu, me_alu_out, me_pc4)
       }
     }
-    when(me_ready && ex_valid) { //from ex
+    // when(me_ready && ex_valid) { //from ex
+    when(ex_valid) { //from ex
       when(de_inst.full(19, 15) === ex_rd_num && ex_wb_en && ex_rd_num =/= 0.U) {
         ex_rs1 := Mux(ex_wb_src === wbs_alu, alu_out, ex_pc + 4.U)
       }
