@@ -9,9 +9,9 @@ class SunolIMemCoreIO extends Bundle {
   val re = Input(Bool())
 
   val ready = Input(Bool())
-  val data = Output(UInt(32.W))
   val valid = Output(Bool())
-  val resp_addr = Output(UInt(32.W))
+  val data = Output(UInt(32.W))
+  val cancel = Input(Bool())
 }
 
 // dmem to core
@@ -25,7 +25,7 @@ class SunolDMemCoreIO extends Bundle {
   val ready = Input(Bool())
   val rdata = Output(UInt(32.W))
   val valid = Output(Bool())
-  val resp_addr = Output(UInt(32.W))
+  val resp = Output(Bool())
 }
 
 //`define MEM_DATA_BITS 128
@@ -74,7 +74,7 @@ class SunolICache extends Module {
     val mem = new SunolMainMemCacheIO
   })
 
-  val cache = Module(new SunolCache(8))
+  val cache = Module(new SunolCache(64))
   val c = cache.io
   val m = io.mem
 
@@ -97,12 +97,12 @@ class SunolICache extends Module {
   m.write_req_data_bits := c.mem_req_data_bits
   m.write_req_data_mask := c.mem_req_data_mask
 
-  c.mem_resp_val := m.read_resp_valid
+  c.mem_resp_valid := m.read_resp_valid
   c.mem_resp_data := m.read_resp_data
 
   // Our additions
-  io.imem.resp_addr := c.cpu_resp_addr
   c.associative := true.B
+  c.cancel := io.imem.cancel
 }
 
 class SunolDCache extends Module {
@@ -111,7 +111,7 @@ class SunolDCache extends Module {
     val mem = new SunolMainMemCacheIO
   })
 
-  val cache = Module(new SunolCache(8))
+  val cache = Module(new SunolCache(64))
   val c = cache.io
   val m = io.mem
 
@@ -159,12 +159,13 @@ class SunolDCache extends Module {
   m.write_req_data_bits := c.mem_req_data_bits
   m.write_req_data_mask := c.mem_req_data_mask
 
-  c.mem_resp_val := m.read_resp_valid
+  c.mem_resp_valid := m.read_resp_valid
   c.mem_resp_data := m.read_resp_data
 
   // Our additions
-  io.dmem.resp_addr := c.cpu_resp_addr
   c.associative := true.B
+  io.dmem.resp := c.cpu_resp_val
+  c.cancel := false.B
 }
 
 class SunolMem extends Module {
