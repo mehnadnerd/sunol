@@ -38,7 +38,7 @@ class SunolCache(rows: Int) extends Module {
   // Constants
   val LINE_LENGTH_BITS = 2
   val ROWS_BITS = log2Ceil(rows)
-  val TAG_TO_DATA_SCALING_FACTOR = 512/128
+  val TAG_TO_DATA_SCALING_FACTOR = 512 / 128
   val SCALING_FACTOR_BITS = log2Ceil(TAG_TO_DATA_SCALING_FACTOR)
   val BYTES_IN_SRAM_ROW = 128 / 8
   val BYTES_IN_SRAM_ROW_BITS = log2Ceil(BYTES_IN_SRAM_ROW)
@@ -95,7 +95,7 @@ class SunolCache(rows: Int) extends Module {
 
   def addrMetadataInCpuAddr(addr: UInt) = {
     require(addr.getWidth == 30)
-    addr(addr.getWidth-1, addr.getWidth-ADDR_BITS)
+    addr(addr.getWidth - 1, addr.getWidth - ADDR_BITS)
   }
 
   def cpuAddrToTagCacheAddr(cpu_addr: UInt): UInt = {
@@ -147,14 +147,20 @@ class SunolCache(rows: Int) extends Module {
       Mux(!isDirty(tags_way(0).io.O), 0.U,
         Mux(!isDirty(tags_way(1).io.O), 1.U, rand)))) & io.associative
 
-  when (state === check) { eviction_target_reg := eviction_target_wire }
-  when (state > check) { eviction_target := eviction_target_reg }.
-    otherwise { eviction_target := eviction_target_wire }
+  when(state === check) {
+    eviction_target_reg := eviction_target_wire
+  }
+  when(state > check) {
+    eviction_target := eviction_target_reg
+  }.
+    otherwise {
+      eviction_target := eviction_target_wire
+    }
 
   val eviction_tag_cache_io = Wire(new TagCacheIO)
   val eviction_data_cache_io = Wire(new DataCacheIO)
 
-  when (eviction_target === 0.U) {
+  when(eviction_target === 0.U) {
     eviction_tag_cache_io := tags_way(0).io
     eviction_data_cache_io := data_way(0).io
   }.otherwise {
@@ -168,17 +174,17 @@ class SunolCache(rows: Int) extends Module {
 
   next_state := idle
 
-  switch (state) {
-    is (idle) {
-      when (cpu_req_fire) {
+  switch(state) {
+    is(idle) {
+      when(cpu_req_fire) {
         next_state := check
       }
     }
 
-    is (check) {
-      when (hit) {
+    is(check) {
+      when(hit) {
         next_state := Mux((old_req_write === 0.U) && cpu_req_fire, check, idle)
-      }.elsewhen (evict) {
+      }.elsewhen(evict) {
         // next_state := Mux(mem_req_data_fire, w1, check)
         next_state := w1
       }.otherwise {
@@ -187,28 +193,29 @@ class SunolCache(rows: Int) extends Module {
       }
     }
 
-    is (r0) {
+    is(r0) {
       next_state := Mux(mem_req_fire, r1, r0)
     }
 
-    is (done) {
-      next_state := Mux(RegNext(state) === done, idle, done)
+    is(done) {
+      //next_state := Mux(RegNext(state) === done, idle, done)
+      next_state := Mux(RegNext(state) === done, Mux(io.cpu_req_valid, check, idle), done)
     }
 
-    is (cancel) {
+    is(cancel) {
       next_state := Mux(RegNext(state) === cancel, check, cancel) // TODO can we save one more cycle here?
     }
   }
 
-  when (state >= w1 && state <= w4) {
+  when(state >= w1 && state <= w4) {
     next_state := Mux(mem_req_data_fire, state + 1.U, state)
   }
 
-  when (state >= r1 && state <= r4) {
+  when(state >= r1 && state <= r4) {
     next_state := state + 1.U
   }
 
-  when (io.cancel) {
+  when(io.cancel) {
     next_state := cancel
   }
 
@@ -221,7 +228,8 @@ class SunolCache(rows: Int) extends Module {
 
   io.mem_req_val := false.B // Bool()
   io.mem_req_addr := DontCare // UInt(8.W)
-  io.mem_req_rw := 0.U /* read */ // UInt(1.W)
+  io.mem_req_rw := 0.U /* read */
+  // UInt(1.W)
   io.mem_req_data_valid := false.B // Bool()
   io.mem_req_data_bits := DontCare // UInt(128.W)
   io.mem_req_data_mask := 0.U // UInt(16.W)
@@ -249,27 +257,27 @@ class SunolCache(rows: Int) extends Module {
     t.io.I := DontCare
   }
 
-  switch (state) {
-    is (idle) {
+  switch(state) {
+    is(idle) {
       io.cpu_req_rdy := true.B
 
       old_req_addr := io.cpu_req_addr
       old_req_data := io.cpu_req_data
       old_req_write := io.cpu_req_write
 
-      data_way.foreach( _.io.A := cpuAddrToDataCacheAddr(io.cpu_req_addr) )
-      tags_way.foreach( _.io.A := cpuAddrToTagCacheAddr(io.cpu_req_addr) )
+      data_way.foreach(_.io.A := cpuAddrToDataCacheAddr(io.cpu_req_addr))
+      tags_way.foreach(_.io.A := cpuAddrToTagCacheAddr(io.cpu_req_addr))
     }
 
-    is (check) {
-      when (hit) {
+    is(check) {
+      when(hit) {
         io.cpu_resp_val := true.B
         io.cpu_resp_data := hit_data >> (old_req_addr(1, 0) << 5).asUInt()
 
         // Handle stores
         for (i <- 0 to 1) {
           when((i.U === hit_index) && (old_req_write =/= 0.U)) {
-            val position_on_line = (old_req_addr(LINE_LENGTH_BITS-1, 0) << 5).asUInt()
+            val position_on_line = (old_req_addr(LINE_LENGTH_BITS - 1, 0) << 5).asUInt()
             val modified_data = hit_data & (~((-1).S(32.W) << position_on_line)).asUInt() | (old_req_data << position_on_line).asUInt()
 
             data_way(i).io.I := modified_data
@@ -284,7 +292,7 @@ class SunolCache(rows: Int) extends Module {
 
         // If there is no store, then just go straight back to this cycle
         // TODO can we save a cycle on stores as well?
-        when (old_req_write === 0.U) {
+        when(old_req_write === 0.U) {
           io.cpu_req_rdy := true.B
 
           old_req_addr := io.cpu_req_addr
@@ -301,7 +309,7 @@ class SunolCache(rows: Int) extends Module {
         // Initialize MEM pointer to 0
         io.mem_req_addr := Cat(old_req_addr(old_req_addr.getWidth - 1, LINE_LENGTH_BITS + SCALING_FACTOR_BITS), Fill(SCALING_FACTOR_BITS, 0.U))
 
-        when (io.mem_req_rdy) {
+        when(io.mem_req_rdy) {
           io.mem_req_val := true.B
         }
 
@@ -315,7 +323,7 @@ class SunolCache(rows: Int) extends Module {
       }
     }
 
-    is (w1) {
+    is(w1) {
       val offset = 0
 
       // Write cached data into memory
@@ -327,14 +335,14 @@ class SunolCache(rows: Int) extends Module {
       io.mem_req_data_bits := eviction_data_cache_io.O
 
       // Increment dcache pointer
-      when (next_state =/= w1) {
-        data_way.foreach(_.io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), (offset+1).U(SCALING_FACTOR_BITS.W)))
+      when(next_state =/= w1) {
+        data_way.foreach(_.io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), (offset + 1).U(SCALING_FACTOR_BITS.W)))
       }.otherwise {
         data_way.foreach(_.io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W)))
       }
     }
 
-    is (w2) {
+    is(w2) {
       val offset = 1
 
       // Write cached data into memory
@@ -346,14 +354,14 @@ class SunolCache(rows: Int) extends Module {
       io.mem_req_data_bits := eviction_data_cache_io.O
 
       // Increment dcache pointer
-      when (next_state =/= w2) {
-        data_way.foreach(_.io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), (offset+1).U(SCALING_FACTOR_BITS.W)))
+      when(next_state =/= w2) {
+        data_way.foreach(_.io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), (offset + 1).U(SCALING_FACTOR_BITS.W)))
       }.otherwise {
         data_way.foreach(_.io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W)))
       }
     }
 
-    is (w3) {
+    is(w3) {
       val offset = 2
 
       // Write cached data into memory
@@ -365,14 +373,14 @@ class SunolCache(rows: Int) extends Module {
       io.mem_req_data_bits := eviction_data_cache_io.O
 
       // Increment dcache pointer
-      when (next_state =/= w3) {
-        data_way.foreach(_.io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), (offset+1).U(SCALING_FACTOR_BITS.W)))
+      when(next_state =/= w3) {
+        data_way.foreach(_.io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), (offset + 1).U(SCALING_FACTOR_BITS.W)))
       }.otherwise {
         data_way.foreach(_.io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W)))
       }
     }
 
-    is (w4) {
+    is(w4) {
       val offset = 3
 
       // Write cached data into memory
@@ -385,17 +393,17 @@ class SunolCache(rows: Int) extends Module {
 
       // Increment dcache pointer
       // when (next_state =/= w4) {
-        // data_way.foreach(_.io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), (offset+1).U(SCALING_FACTOR_BITS.W)))
+      // data_way.foreach(_.io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), (offset+1).U(SCALING_FACTOR_BITS.W)))
       // }.otherwise {
       data_way.foreach(_.io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W)))
       // }
     }
 
-    is (r0) {
+    is(r0) {
       // Initialize MEM pointer to 0
       io.mem_req_addr := Cat(old_req_addr(old_req_addr.getWidth - 1, LINE_LENGTH_BITS + SCALING_FACTOR_BITS), Fill(SCALING_FACTOR_BITS, 0.U))
 
-      when (io.mem_req_rdy) {
+      when(io.mem_req_rdy) {
         io.mem_req_val := true.B
       }
 
@@ -408,12 +416,12 @@ class SunolCache(rows: Int) extends Module {
       }
     }
 
-    is (r1) {
+    is(r1) {
       val offset = 0
 
       // Read from MEM into cached data
       for (i <- 0 to 1) {
-        when (i.U === eviction_target) {
+        when(i.U === eviction_target) {
           data_way(i).io.I := io.mem_resp_data
           data_way(i).io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W))
           data_way(i).io.WEB := 0.U // 0.U // write
@@ -422,12 +430,12 @@ class SunolCache(rows: Int) extends Module {
       }
     }
 
-    is (r2) {
+    is(r2) {
       val offset = 1
 
       // Read from MEM into cached data
       for (i <- 0 to 1) {
-        when (i.U === eviction_target) {
+        when(i.U === eviction_target) {
           data_way(i).io.I := io.mem_resp_data
           data_way(i).io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W))
           data_way(i).io.WEB := 0.U // 0.U // write
@@ -436,12 +444,12 @@ class SunolCache(rows: Int) extends Module {
       }
     }
 
-    is (r3) {
+    is(r3) {
       val offset = 2
 
       // Read from MEM into cached data
       for (i <- 0 to 1) {
-        when (i.U === eviction_target) {
+        when(i.U === eviction_target) {
           data_way(i).io.I := io.mem_resp_data
           data_way(i).io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W))
           data_way(i).io.WEB := 0.U // 0.U // write
@@ -450,12 +458,12 @@ class SunolCache(rows: Int) extends Module {
       }
     }
 
-    is (r4) {
+    is(r4) {
       val offset = 3
 
       // Read from MEM into cached data
       for (i <- 0 to 1) {
-        when (i.U === eviction_target) {
+        when(i.U === eviction_target) {
           data_way(i).io.I := io.mem_resp_data
           data_way(i).io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W))
           data_way(i).io.WEB := 0.U // 0.U // write
@@ -469,11 +477,11 @@ class SunolCache(rows: Int) extends Module {
       }
     }
 
-    is (done) {
+    is(done) {
       // Handle stores
       for (i <- 0 to 1) {
         when((i.U === eviction_target) && (old_req_write =/= 0.U)) {
-          val position_on_line = (old_req_addr(LINE_LENGTH_BITS-1, 0) << 5).asUInt()
+          val position_on_line = (old_req_addr(LINE_LENGTH_BITS - 1, 0) << 5).asUInt()
           val modified_data = hit_data & (~((-1).S(32.W) << position_on_line)).asUInt() | (old_req_data << position_on_line).asUInt()
 
           data_way(i).io.I := modified_data
@@ -489,14 +497,24 @@ class SunolCache(rows: Int) extends Module {
       // TODO go straight back to check from this stage to save a cycle
 
       // TODO get rid of RegNext. Right now, we wait to make sure the memory is read out properly
-      when (RegNext(state) === done) {
+      when(RegNext(state) === done) {
         io.cpu_resp_val := true.B
         io.cpu_resp_data := hit_data >> (old_req_addr(1, 0) << 5).asUInt()
       }
+      when(next_state === check) {
+        //io.cpu_req_rdy := true.B //TODO: don't think want this, because if used causes combinational loop
+
+        old_req_addr := io.cpu_req_addr
+        old_req_data := io.cpu_req_data
+        old_req_write := io.cpu_req_write
+
+        data_way.foreach(_.io.A := cpuAddrToDataCacheAddr(io.cpu_req_addr))
+        tags_way.foreach(_.io.A := cpuAddrToTagCacheAddr(io.cpu_req_addr))
+      }
     }
 
-    is (cancel) {
-      when (io.cpu_req_valid) {
+    is(cancel) {
+      when(io.cpu_req_valid) {
         old_req_addr := io.cpu_req_addr
       }
     }
