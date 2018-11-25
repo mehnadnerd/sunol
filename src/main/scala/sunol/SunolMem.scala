@@ -80,7 +80,7 @@ class SunolICache extends Module {
 
   c.cpu_req_valid := io.imem.re
   // := c.cpu_req_rdy //TODO: we just kind of assume this is true
-  c.cpu_req_addr := io.imem.addr
+  c.cpu_req_addr := io.imem.addr(31, 2)
   c.cpu_req_data := DontCare
   c.cpu_req_write := 0.U
 
@@ -141,7 +141,7 @@ class SunolDCache extends Module {
 
   c.cpu_req_valid := io.dmem.re
   // := c.cpu_req_rdy //TODO: we just kind of assume this is true
-  c.cpu_req_addr := io.dmem.addr
+  c.cpu_req_addr := io.dmem.addr(31, 2)
   c.cpu_req_data := io.dmem.wdata << (shift << 3.U).asUInt()
   c.cpu_req_write := Cat(Seq.fill(4)(io.dmem.we)) & sizemask.asUInt()
 
