@@ -58,9 +58,11 @@ class BranchPredictor extends Module {
   val is_j = opcode === OPCODE_JAL.U
   val is_b = opcode === OPCODE_BRANCH.U
 
-  val offset = Mux(is_b, imm_b, imm_j)
+  // val offset = Mux(is_b, imm_b, imm_j)
+  val offset = imm_b
   val sign = offset(31)
 
-  io.taken := is_j || (is_b && sign)
+  // io.taken := is_j || (is_b && sign)
+  io.taken := is_b
   io.target := Mux(io.taken, io.pc + offset, io.pc + 4.U)
 }

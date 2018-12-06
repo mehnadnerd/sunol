@@ -4,33 +4,33 @@ import chisel3._
 import chisel3.util._
 
 class DataCacheIO extends Bundle {
-  val CE = Input(Clock())
-  val WEB = Input(Bool())
-  val OEB = Input(Bool())
-  val CSB = Input(Bool())
-  val BYTEMASK = Input(UInt(16.W))
-  val A = Input(UInt(8.W))
-  val I = Input(UInt(128.W))
-  val O = Output(UInt(128.W))
+  val CE1 = Input(Clock())
+  val WEB1 = Input(Bool())
+  val OEB1 = Input(Bool())
+  val CSB1 = Input(Bool())
+  val WBM1 = Input(UInt(16.W))
+  val A1 = Input(UInt(8.W))
+  val I1 = Input(UInt(128.W))
+  val O1 = Output(UInt(128.W))
 }
 
 class TagCacheIO extends Bundle {
-  val CE = Input(Clock())
-  val WEB = Input(Bool())
-  val OEB = Input(Bool())
-  val CSB = Input(Bool())
-  val A = Input(UInt(6.W))
-  val I = Input(UInt(32.W))
-  val O = Output(UInt(32.W))
+  val CE1 = Input(Clock())
+  val WEB1 = Input(Bool())
+  val OEB1 = Input(Bool())
+  val CSB1 = Input(Bool())
+  val A1 = Input(UInt(6.W))
+  val I1 = Input(UInt(32.W))
+  val O1 = Output(UInt(32.W))
 }
 
 // This gives us a max of 256/4=64 rows
-class SRAM1RW256x128 extends BlackBox {
+class SRAM1RW256x128_new extends BlackBox {
   val io = IO(new DataCacheIO)
 }
 
 // This gives us a max of 64 rows
-class SRAM1RW64x32 extends BlackBox {
+class SRAM1RW64x32_new extends BlackBox {
   val io = IO(new TagCacheIO)
 }
 
@@ -118,8 +118,8 @@ class SunolCache(rows: Int) extends Module {
   val old_req_write = Reg(UInt(io.cpu_req_write.getWidth.W))
 
   // Memories
-  val data_way = Seq(Module(new SRAM1RW256x128()), Module(new SRAM1RW256x128()))
-  val tags_way = Seq(Module(new SRAM1RW64x32()), Module(new SRAM1RW64x32()))
+  val data_way = Seq(Module(new SRAM1RW256x128_new()), Module(new SRAM1RW256x128_new()))
+  val tags_way = Seq(Module(new SRAM1RW64x32_new()), Module(new SRAM1RW64x32_new()))
 
   // Wires
   val cpu_req_fire = io.cpu_req_rdy && io.cpu_req_valid
@@ -127,14 +127,14 @@ class SunolCache(rows: Int) extends Module {
   val mem_req_data_fire = io.mem_req_data_rdy && io.mem_req_data_valid
 
   val hit = Wire(Bool())
-  hit := tags_way.map(tw => isHit(tw.io.O, old_req_addr)).reduce(_ || _)
+  hit := tags_way.map(tw => isHit(tw.io.O1, old_req_addr)).reduce(_ || _)
   val hit_index = Wire(UInt(1.W))
-  hit_index := Mux(isHit(tags_way(0).io.O, old_req_addr), 0.U, 1.U)
+  hit_index := Mux(isHit(tags_way(0).io.O1, old_req_addr), 0.U, 1.U)
   val hit_data = Wire(UInt(128.W))
-  hit_data := Mux(isHit(tags_way(0).io.O, old_req_addr), data_way(0).io.O, data_way(1).io.O)
+  hit_data := Mux(isHit(tags_way(0).io.O1, old_req_addr), data_way(0).io.O1, data_way(1).io.O1)
 
   val evict = Wire(Bool())
-  evict := tags_way.map(tw => isValid(tw.io.O) && isDirty(tw.io.O)).reduce(_ && _)
+  evict := tags_way.map(tw => isValid(tw.io.O1) && isDirty(tw.io.O1)).reduce(_ && _)
 
   val rand = LFSR16()(0)
 
@@ -142,10 +142,10 @@ class SunolCache(rows: Int) extends Module {
   val eviction_target_wire = Wire(UInt(1.W))
   val eviction_target_reg = Reg(UInt(1.W))
 
-  eviction_target_wire := Mux(!isValid(tags_way(0).io.O), 0.U,
-    Mux(!isValid(tags_way(1).io.O), 1.U,
-      Mux(!isDirty(tags_way(0).io.O), 0.U,
-        Mux(!isDirty(tags_way(1).io.O), 1.U, rand)))) & io.associative
+  eviction_target_wire := Mux(!isValid(tags_way(0).io.O1), 0.U,
+    Mux(!isValid(tags_way(1).io.O1), 1.U,
+      Mux(!isDirty(tags_way(0).io.O1), 0.U,
+        Mux(!isDirty(tags_way(1).io.O1), 1.U, rand)))) & io.associative
 
   when (state === check) { eviction_target_reg := eviction_target_wire }
   when (state > check) { eviction_target := eviction_target_reg }.
@@ -227,26 +227,26 @@ class SunolCache(rows: Int) extends Module {
   io.mem_req_data_mask := 0.U // UInt(16.W)
 
   data_way.foreach { d =>
-    d.io.CE := clock
-    d.io.OEB := 0.U
-    d.io.CSB := 0.U
+    d.io.CE1 := clock
+    d.io.OEB1 := 0.U
+    d.io.CSB1 := 0.U
 
     // Defaults
-    d.io.A := cpuAddrToDataCacheAddr(old_req_addr)
-    d.io.WEB := 1.U // read
-    d.io.BYTEMASK := 0.U
-    d.io.I := DontCare
+    d.io.A1 := cpuAddrToDataCacheAddr(old_req_addr)
+    d.io.WEB1 := 1.U // read
+    d.io.WBM1 := 0.U
+    d.io.I1 := DontCare
   }
 
   tags_way.foreach { t =>
-    t.io.CE := clock
-    t.io.OEB := 0.U
-    t.io.CSB := 0.U
+    t.io.CE1 := clock
+    t.io.OEB1 := 0.U
+    t.io.CSB1 := 0.U
 
     // Defaults
-    t.io.A := cpuAddrToTagCacheAddr(old_req_addr)
-    t.io.WEB := 1.U // read
-    t.io.I := DontCare
+    t.io.A1 := cpuAddrToTagCacheAddr(old_req_addr)
+    t.io.WEB1 := 1.U // read
+    t.io.I1 := DontCare
   }
 
   switch (state) {
@@ -257,14 +257,20 @@ class SunolCache(rows: Int) extends Module {
       old_req_data := io.cpu_req_data
       old_req_write := io.cpu_req_write
 
-      data_way.foreach( _.io.A := cpuAddrToDataCacheAddr(io.cpu_req_addr) )
-      tags_way.foreach( _.io.A := cpuAddrToTagCacheAddr(io.cpu_req_addr) )
+      data_way.foreach( _.io.A1 := cpuAddrToDataCacheAddr(io.cpu_req_addr) )
+      tags_way.foreach( _.io.A1 := cpuAddrToTagCacheAddr(io.cpu_req_addr) )
     }
 
     is (check) {
       when (hit) {
         io.cpu_resp_val := true.B
-        io.cpu_resp_data := hit_data >> (old_req_addr(1, 0) << 5).asUInt()
+        // io.cpu_resp_data := hit_data >> (old_req_addr(1, 0) << 5).asUInt()
+        val low = old_req_addr(1, 0).asUInt()
+        val result_width = io.cpu_resp_data.getWidth
+        io.cpu_resp_data := Mux(low === 0.U, hit_data(result_width-1, 0),
+          Mux(low === 1.U, hit_data(2*result_width-1, result_width),
+          Mux(low === 2.U, hit_data(3*result_width-1, 2*result_width),
+            hit_data(4*result_width-1, 3*result_width))))
 
         // Handle stores
         for (i <- 0 to 1) {
@@ -272,13 +278,13 @@ class SunolCache(rows: Int) extends Module {
             val position_on_line = (old_req_addr(LINE_LENGTH_BITS-1, 0) << 5).asUInt()
             val modified_data = hit_data & (~((-1).S(32.W) << position_on_line)).asUInt() | (old_req_data << position_on_line).asUInt()
 
-            data_way(i).io.I := modified_data
-            data_way(i).io.BYTEMASK := old_req_write << (position_on_line >> 3).asUInt()
-            data_way(i).io.WEB := 0.U // Write
+            data_way(i).io.I1 := modified_data
+            data_way(i).io.WBM1 := old_req_write << (position_on_line >> 3).asUInt()
+            data_way(i).io.WEB1 := 0.U // Write
 
             // Mark tag as dirty
-            tags_way(i).io.I := Cat(1.U(1.W), 1.U(1.W), Fill(30 - ADDR_BITS, 0.U(1.W)), addrMetadataInCpuAddr(old_req_addr))
-            tags_way(i).io.WEB := 0.U // write
+            tags_way(i).io.I1 := Cat(1.U(1.W), 1.U(1.W), Fill(30 - ADDR_BITS, 0.U(1.W)), addrMetadataInCpuAddr(old_req_addr))
+            tags_way(i).io.WEB1 := 0.U // write
           }
         }
 
@@ -291,12 +297,12 @@ class SunolCache(rows: Int) extends Module {
           old_req_data := io.cpu_req_data
           old_req_write := io.cpu_req_write
 
-          data_way.foreach(_.io.A := cpuAddrToDataCacheAddr(io.cpu_req_addr))
-          tags_way.foreach(_.io.A := cpuAddrToTagCacheAddr(io.cpu_req_addr))
+          data_way.foreach(_.io.A1 := cpuAddrToDataCacheAddr(io.cpu_req_addr))
+          tags_way.foreach(_.io.A1 := cpuAddrToTagCacheAddr(io.cpu_req_addr))
         }
       }.elsewhen(evict) {
         // Set dcache pointer to 0
-        data_way.foreach(_.io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), 0.U(SCALING_FACTOR_BITS.W)))
+        data_way.foreach(_.io.A1 := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), 0.U(SCALING_FACTOR_BITS.W)))
       }.otherwise {
         // Initialize MEM pointer to 0
         io.mem_req_addr := Cat(old_req_addr(old_req_addr.getWidth - 1, LINE_LENGTH_BITS + SCALING_FACTOR_BITS), Fill(SCALING_FACTOR_BITS, 0.U))
@@ -308,8 +314,8 @@ class SunolCache(rows: Int) extends Module {
         // Invalidate current cacheline
         for (i <- 0 to 1) {
           when(i.U === eviction_target) {
-            tags_way(i).io.I := Fill(32, 0.U(1.W))
-            tags_way(i).io.WEB := 0.U // write
+            tags_way(i).io.I1 := Fill(32, 0.U(1.W))
+            tags_way(i).io.WEB1 := 0.U // write
           }
         }
       }
@@ -321,16 +327,16 @@ class SunolCache(rows: Int) extends Module {
       // Write cached data into memory
       io.mem_req_val := true.B
       io.mem_req_data_valid := true.B
-      io.mem_req_addr := Cat(addrMetadataInTag(eviction_tag_cache_io.O), old_req_addr(LINE_LENGTH_BITS + SCALING_FACTOR_BITS + ROWS_BITS - 1, LINE_LENGTH_BITS + SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W))
+      io.mem_req_addr := Cat(addrMetadataInTag(eviction_tag_cache_io.O1), old_req_addr(LINE_LENGTH_BITS + SCALING_FACTOR_BITS + ROWS_BITS - 1, LINE_LENGTH_BITS + SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W))
       io.mem_req_rw := 1.U
       io.mem_req_data_mask := (-1).S(16.W).asUInt()
-      io.mem_req_data_bits := eviction_data_cache_io.O
+      io.mem_req_data_bits := eviction_data_cache_io.O1
 
       // Increment dcache pointer
       when (next_state =/= w1) {
-        data_way.foreach(_.io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), (offset+1).U(SCALING_FACTOR_BITS.W)))
+        data_way.foreach(_.io.A1 := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), (offset+1).U(SCALING_FACTOR_BITS.W)))
       }.otherwise {
-        data_way.foreach(_.io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W)))
+        data_way.foreach(_.io.A1 := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W)))
       }
     }
 
@@ -340,16 +346,16 @@ class SunolCache(rows: Int) extends Module {
       // Write cached data into memory
       io.mem_req_val := true.B
       io.mem_req_data_valid := true.B
-      io.mem_req_addr := Cat(addrMetadataInTag(eviction_tag_cache_io.O), old_req_addr(LINE_LENGTH_BITS + SCALING_FACTOR_BITS + ROWS_BITS - 1, LINE_LENGTH_BITS + SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W))
+      io.mem_req_addr := Cat(addrMetadataInTag(eviction_tag_cache_io.O1), old_req_addr(LINE_LENGTH_BITS + SCALING_FACTOR_BITS + ROWS_BITS - 1, LINE_LENGTH_BITS + SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W))
       io.mem_req_rw := 1.U
       io.mem_req_data_mask := (-1).S(16.W).asUInt()
-      io.mem_req_data_bits := eviction_data_cache_io.O
+      io.mem_req_data_bits := eviction_data_cache_io.O1
 
       // Increment dcache pointer
       when (next_state =/= w2) {
-        data_way.foreach(_.io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), (offset+1).U(SCALING_FACTOR_BITS.W)))
+        data_way.foreach(_.io.A1 := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), (offset+1).U(SCALING_FACTOR_BITS.W)))
       }.otherwise {
-        data_way.foreach(_.io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W)))
+        data_way.foreach(_.io.A1 := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W)))
       }
     }
 
@@ -359,16 +365,16 @@ class SunolCache(rows: Int) extends Module {
       // Write cached data into memory
       io.mem_req_val := true.B
       io.mem_req_data_valid := true.B
-      io.mem_req_addr := Cat(addrMetadataInTag(eviction_tag_cache_io.O), old_req_addr(LINE_LENGTH_BITS + SCALING_FACTOR_BITS + ROWS_BITS - 1, LINE_LENGTH_BITS + SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W))
+      io.mem_req_addr := Cat(addrMetadataInTag(eviction_tag_cache_io.O1), old_req_addr(LINE_LENGTH_BITS + SCALING_FACTOR_BITS + ROWS_BITS - 1, LINE_LENGTH_BITS + SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W))
       io.mem_req_rw := 1.U
       io.mem_req_data_mask := (-1).S(16.W).asUInt()
-      io.mem_req_data_bits := eviction_data_cache_io.O
+      io.mem_req_data_bits := eviction_data_cache_io.O1
 
       // Increment dcache pointer
       when (next_state =/= w3) {
-        data_way.foreach(_.io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), (offset+1).U(SCALING_FACTOR_BITS.W)))
+        data_way.foreach(_.io.A1 := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), (offset+1).U(SCALING_FACTOR_BITS.W)))
       }.otherwise {
-        data_way.foreach(_.io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W)))
+        data_way.foreach(_.io.A1 := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W)))
       }
     }
 
@@ -378,16 +384,16 @@ class SunolCache(rows: Int) extends Module {
       // Write cached data into memory
       io.mem_req_val := true.B
       io.mem_req_data_valid := true.B
-      io.mem_req_addr := Cat(addrMetadataInTag(eviction_tag_cache_io.O), old_req_addr(LINE_LENGTH_BITS + SCALING_FACTOR_BITS + ROWS_BITS - 1, LINE_LENGTH_BITS + SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W))
+      io.mem_req_addr := Cat(addrMetadataInTag(eviction_tag_cache_io.O1), old_req_addr(LINE_LENGTH_BITS + SCALING_FACTOR_BITS + ROWS_BITS - 1, LINE_LENGTH_BITS + SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W))
       io.mem_req_rw := 1.U
       io.mem_req_data_mask := (-1).S(16.W).asUInt()
-      io.mem_req_data_bits := eviction_data_cache_io.O
+      io.mem_req_data_bits := eviction_data_cache_io.O1
 
       // Increment dcache pointer
       // when (next_state =/= w4) {
         // data_way.foreach(_.io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), (offset+1).U(SCALING_FACTOR_BITS.W)))
       // }.otherwise {
-      data_way.foreach(_.io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W)))
+      data_way.foreach(_.io.A1 := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W)))
       // }
     }
 
@@ -402,8 +408,8 @@ class SunolCache(rows: Int) extends Module {
       // Invalidate current cacheline
       for (i <- 0 to 1) {
         when(i.U === eviction_target) {
-          tags_way(i).io.I := Fill(32, 0.U(1.W))
-          tags_way(i).io.WEB := 0.U // write
+          tags_way(i).io.I1 := Fill(32, 0.U(1.W))
+          tags_way(i).io.WEB1 := 0.U // write
         }
       }
     }
@@ -414,10 +420,10 @@ class SunolCache(rows: Int) extends Module {
       // Read from MEM into cached data
       for (i <- 0 to 1) {
         when (i.U === eviction_target) {
-          data_way(i).io.I := io.mem_resp_data
-          data_way(i).io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W))
-          data_way(i).io.WEB := 0.U // 0.U // write
-          data_way(i).io.BYTEMASK := (-1).S(16.W).asUInt()
+          data_way(i).io.I1 := io.mem_resp_data
+          data_way(i).io.A1 := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W))
+          data_way(i).io.WEB1 := 0.U // 0.U // write
+          data_way(i).io.WBM1 := (-1).S(16.W).asUInt()
         }
       }
     }
@@ -428,10 +434,10 @@ class SunolCache(rows: Int) extends Module {
       // Read from MEM into cached data
       for (i <- 0 to 1) {
         when (i.U === eviction_target) {
-          data_way(i).io.I := io.mem_resp_data
-          data_way(i).io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W))
-          data_way(i).io.WEB := 0.U // 0.U // write
-          data_way(i).io.BYTEMASK := (-1).S(16.W).asUInt()
+          data_way(i).io.I1 := io.mem_resp_data
+          data_way(i).io.A1 := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W))
+          data_way(i).io.WEB1 := 0.U // 0.U // write
+          data_way(i).io.WBM1 := (-1).S(16.W).asUInt()
         }
       }
     }
@@ -442,10 +448,10 @@ class SunolCache(rows: Int) extends Module {
       // Read from MEM into cached data
       for (i <- 0 to 1) {
         when (i.U === eviction_target) {
-          data_way(i).io.I := io.mem_resp_data
-          data_way(i).io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W))
-          data_way(i).io.WEB := 0.U // 0.U // write
-          data_way(i).io.BYTEMASK := (-1).S(16.W).asUInt()
+          data_way(i).io.I1 := io.mem_resp_data
+          data_way(i).io.A1 := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W))
+          data_way(i).io.WEB1 := 0.U // 0.U // write
+          data_way(i).io.WBM1 := (-1).S(16.W).asUInt()
         }
       }
     }
@@ -456,15 +462,15 @@ class SunolCache(rows: Int) extends Module {
       // Read from MEM into cached data
       for (i <- 0 to 1) {
         when (i.U === eviction_target) {
-          data_way(i).io.I := io.mem_resp_data
-          data_way(i).io.A := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W))
-          data_way(i).io.WEB := 0.U // 0.U // write
-          data_way(i).io.BYTEMASK := (-1).S(16.W).asUInt()
+          data_way(i).io.I1 := io.mem_resp_data
+          data_way(i).io.A1 := Cat(cpuAddrToDataCacheAddr(old_req_addr)(ROWS_BITS + SCALING_FACTOR_BITS - 1, SCALING_FACTOR_BITS), offset.U(SCALING_FACTOR_BITS.W))
+          data_way(i).io.WEB1 := 0.U // 0.U // write
+          data_way(i).io.WBM1 := (-1).S(16.W).asUInt()
 
           // Update tags
           val dirty = Mux(old_req_write === 0.U, 0.U(1.W), 1.U(1.W))
-          tags_way(i).io.I := Cat(1.U(1.W), dirty, Fill(30 - ADDR_BITS, 0.U(1.W)), addrMetadataInCpuAddr(old_req_addr))
-          tags_way(i).io.WEB := 0.U // write
+          tags_way(i).io.I1 := Cat(1.U(1.W), dirty, Fill(30 - ADDR_BITS, 0.U(1.W)), addrMetadataInCpuAddr(old_req_addr))
+          tags_way(i).io.WEB1 := 0.U // write
         }
       }
     }
@@ -476,9 +482,9 @@ class SunolCache(rows: Int) extends Module {
           val position_on_line = (old_req_addr(LINE_LENGTH_BITS-1, 0) << 5).asUInt()
           val modified_data = hit_data & (~((-1).S(32.W) << position_on_line)).asUInt() | (old_req_data << position_on_line).asUInt()
 
-          data_way(i).io.I := modified_data
-          data_way(i).io.BYTEMASK := old_req_write << (position_on_line >> 3).asUInt()
-          data_way(i).io.WEB := 0.U // Write
+          data_way(i).io.I1 := modified_data
+          data_way(i).io.WBM1 := old_req_write << (position_on_line >> 3).asUInt()
+          data_way(i).io.WEB1 := 0.U // Write
 
           // Mark tag as dirty
           // tags_way(i).io.I := Cat(1.U(1.W), 1.U(1.W), Fill(30 - ADDR_BITS, 0.U(1.W)), addrMetadataInCpuAddr(old_req_addr))
@@ -491,7 +497,14 @@ class SunolCache(rows: Int) extends Module {
       // TODO get rid of RegNext. Right now, we wait to make sure the memory is read out properly
       when (RegNext(state) === done) {
         io.cpu_resp_val := true.B
-        io.cpu_resp_data := hit_data >> (old_req_addr(1, 0) << 5).asUInt()
+        // io.cpu_resp_data := hit_data >> (old_req_addr(1, 0) << 5).asUInt()
+
+        val low = old_req_addr(1, 0).asUInt()
+        val result_width = io.cpu_resp_data.getWidth
+        io.cpu_resp_data := Mux(low === 0.U, hit_data(result_width-1, 0),
+          Mux(low === 1.U, hit_data(2*result_width-1, result_width),
+            Mux(low === 2.U, hit_data(3*result_width-1, 2*result_width),
+              hit_data(4*result_width-1, 3*result_width))))
       }
     }
 
